@@ -1,4 +1,17 @@
-export type MenuActionType = 'website' | 'html-page' | 'share' | 'about' | 'contact';
+export type MenuActionType = 'website' | 'html-page' | 'share' | 'about' | 'contact' | 'submenu';
+
+/** A destination inside a submenu. Submenus group two or more places together. */
+export interface SubmenuLink {
+  id: string;
+  label: string;
+  description?: string;
+  icon: string;
+  actionType: 'website' | 'html-page' | 'share' | 'contact';
+  targetUrl?: string;
+  targetHtml?: string;
+  badge?: string;
+  customImageUrl?: string;
+}
 
 export interface MenuItem {
   id: string;
@@ -10,6 +23,8 @@ export interface MenuItem {
   badge?: string;
   isExternal?: boolean;
   customImageUrl?: string;
+  /** Used when actionType is 'submenu'. */
+  children?: SubmenuLink[];
 }
 
 export interface LaunchpadIconItem {
@@ -18,13 +33,15 @@ export interface LaunchpadIconItem {
   description: string;
   icon: string;
   category: string;
-  actionType: 'website' | 'html-page';
+  actionType: 'website' | 'html-page' | 'submenu';
   targetUrl?: string;
   htmlContent?: string;
   badge?: string;
   badgeColor?: string;
   color: string;
   customImageUrl?: string;
+  /** Used when actionType is 'submenu'. */
+  children?: SubmenuLink[];
 }
 
 export interface KeystoreConfig {

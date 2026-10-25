@@ -620,6 +620,91 @@ export function generateAppHtml(config: AppConfig): string {
       padding: 24px 20px;
       line-height: 1.6;
     }
+    /* Submenu: one icon reveals several destinations */
+    .submenu-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .submenu-intro {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .submenu-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #ffffff;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .submenu-link:active {
+      transform: scale(0.985);
+      border-color: var(--primary);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .submenu-link-icon {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .submenu-link-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+    }
+    .submenu-link-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .submenu-link-desc {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.35;
+    }
+    .submenu-chevron {
+      color: #94a3b8;
+      font-size: 20px;
+      line-height: 1;
+      padding-left: 2px;
+    }
+    .submenu-empty {
+      padding: 28px 16px;
+      text-align: center;
+      color: #64748b;
+      font-size: 13px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 14px;
+    }
+    .card-submenu-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.12);
+      color: var(--primary);
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -818,29 +903,101 @@ export function generateAppHtml(config: AppConfig): string {
       modalCloseBtn.addEventListener('click', () => modal.classList.remove('active'));
     }
 
+    // Runs any destination: used by menu items, cards and submenu children.
+    function runDestination(destination, fallbackTitle) {
+      if (!destination) return;
+      const title = fallbackTitle || destination.label || destination.title || 'Details';
+      if (destination.actionType === 'share') {
+        handleShare();
+      } else if (destination.actionType === 'contact') {
+        if (destination.targetUrl) {
+          window.location.href = destination.targetUrl;
+        } else {
+          openModal(title, '<div class="submenu-empty">No contact address configured.</div>');
+        }
+      } else if (destination.actionType === 'html-page') {
+        openModal(
+          title,
+          destination.targetHtml || destination.htmlContent || '<p>No content available</p>'
+        );
+      } else if (destination.targetUrl) {
+        window.open(destination.targetUrl, '_blank');
+      } else {
+        openModal(
+          title,
+          '<div class="submenu-empty">No destination configured for this section yet.</div>'
+        );
+      }
+    }
+
+    // A submenu groups two or more destinations behind a single icon.
+    function openSubmenu(source) {
+      if (!source) return;
+      const children = (source.children || []).filter(Boolean);
+      const title = source.label || source.title || 'More';
+      if (!children.length) {
+        openModal(title, '<div class="submenu-empty">No destinations configured yet.</div>');
+        return;
+      }
+      const rows = children
+        .map(function (child, index) {
+          const label = child.label || 'Section ' + (index + 1);
+          return (
+            '<button class="submenu-link" type="button" data-submenu-index="' + index + '">' +
+              '<span class="submenu-link-icon">' + escapeHtml(label.charAt(0).toUpperCase()) + '</span>' +
+              '<span class="submenu-link-text">' +
+                '<span class="submenu-link-label">' + escapeHtml(label) + '</span>' +
+                (child.description
+                  ? '<span class="submenu-link-desc">' + escapeHtml(child.description) + '</span>'
+                  : '') +
+              '</span>' +
+              (child.badge ? '<span class="item-badge">' + escapeHtml(child.badge) + '</span>' : '') +
+              '<span class="submenu-chevron">&#8250;</span>' +
+            '</button>'
+          );
+        })
+        .join('');
+      openModal(
+        title + ' \\u00b7 ' + children.length + ' destinations',
+        '<p class="submenu-intro">Choose where to go next:</p><div class="submenu-list">' + rows + '</div>'
+      );
+      if (modalBody) {
+        Array.prototype.forEach.call(
+          modalBody.querySelectorAll('[data-submenu-index]'),
+          function (btn) {
+            btn.addEventListener('click', function () {
+              const child = children[Number(btn.getAttribute('data-submenu-index'))];
+              runDestination(child, title);
+            });
+          }
+        );
+      }
+    }
+
     // Render Drawer Items
     const drawerNav = document.getElementById('drawer-items-list');
     if (drawerNav && APP_CONFIG.menuItems) {
       APP_CONFIG.menuItems.forEach(item => {
         const el = document.createElement('div');
         el.className = 'drawer-item';
+        const childCount = item.children ? item.children.length : 0;
+        const trailing = item.actionType === 'submenu'
+          ? '<span class="item-badge" style="background:#ede9fe;color:#6d28d9;">' +
+            childCount + ' places &#8250;</span>'
+          : (item.badge ? '<span class="item-badge">' + escapeHtml(item.badge) + '</span>' : '');
         el.innerHTML = \`
           <div class="drawer-item-left">
             \${item.customImageUrl ? \`<img class="drawer-item-image" src="\${escapeHtml(item.customImageUrl)}" alt="" />\` : ''}
             <span>\${escapeHtml(item.label)}</span>
           </div>
-          \${item.badge ? \`<span class="item-badge">\${escapeHtml(item.badge)}</span>\` : ''}
+          \${trailing}
         \`;
         el.addEventListener('click', () => {
           closeDrawer();
-          if (item.actionType === 'share') {
-            handleShare();
-          } else if (item.actionType === 'html-page') {
-            openModal(item.label, item.targetHtml || '<p>No content available</p>');
-          } else if (item.actionType === 'website' && item.targetUrl) {
-            window.open(item.targetUrl, '_blank');
-          } else if (item.actionType === 'contact' && item.targetUrl) {
-            window.location.href = item.targetUrl;
+          if (item.actionType === 'submenu') {
+            openSubmenu(item);
+          } else {
+            runDestination(item, item.label);
           }
         });
         drawerNav.appendChild(el);
@@ -857,12 +1014,10 @@ export function generateAppHtml(config: AppConfig): string {
         el.addEventListener('click', () => {
           document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
           el.classList.add('active');
-          if (item.actionType === 'share') {
-            handleShare();
-          } else if (item.actionType === 'html-page') {
-            openModal(item.label, item.targetHtml || '<p>No content available</p>');
-          } else if (item.actionType === 'website' && item.targetUrl) {
-            window.open(item.targetUrl, '_blank');
+          if (item.actionType === 'submenu') {
+            openSubmenu(item);
+          } else {
+            runDestination(item, item.label);
           }
         });
         bottomNav.appendChild(el);
@@ -875,6 +1030,10 @@ export function generateAppHtml(config: AppConfig): string {
       APP_CONFIG.launchpadIcons.forEach(iconItem => {
         const card = document.createElement('div');
         card.className = 'icon-card';
+        const submenuCount = iconItem.children ? iconItem.children.length : 0;
+        const actionHint = iconItem.actionType === 'submenu'
+          ? '<span class="card-submenu-count">' + submenuCount + ' places &#8250;</span>'
+          : '';
         card.innerHTML = \`
           \${iconItem.badge ? \`<span class="card-badge" style="background:\${iconItem.badgeColor || iconItem.color}">\${escapeHtml(iconItem.badge)}</span>\` : ''}
           \${iconItem.customImageUrl ? \`
@@ -891,12 +1050,13 @@ export function generateAppHtml(config: AppConfig): string {
           \`}
           <div class="card-title">\${escapeHtml(iconItem.title)}</div>
           <div class="card-desc">\${escapeHtml(iconItem.description)}</div>
+          \${actionHint}
         \`;
         card.addEventListener('click', () => {
-          if (iconItem.actionType === 'website' && iconItem.targetUrl) {
-            window.open(iconItem.targetUrl, '_blank');
-          } else if (iconItem.actionType === 'html-page' && iconItem.htmlContent) {
-            openModal(iconItem.title, iconItem.htmlContent);
+          if (iconItem.actionType === 'submenu') {
+            openSubmenu(iconItem);
+          } else {
+            runDestination(iconItem, iconItem.title);
           }
         });
         grid.appendChild(card);

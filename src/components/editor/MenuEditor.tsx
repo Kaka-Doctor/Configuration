@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import type { AppConfig, MenuItem, MenuActionType } from '../../types/appConfig';
+import type { AppConfig, MenuItem, MenuActionType, SubmenuLink } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';
+import { SubmenuLinksEditor } from './SubmenuLinksEditor';
 import {
   Menu as MenuIcon,
   Plus,
@@ -14,7 +15,29 @@ import {
   Sliders,
   ChevronDown,
   Layers,
+  FolderTree,
 } from 'lucide-react';
+
+function defaultSubmenuChildren(): SubmenuLink[] {
+  return [
+    {
+      id: `sm-${Date.now()}-1`,
+      label: 'Our Website',
+      description: 'Open the live site',
+      icon: 'Globe',
+      actionType: 'website',
+      targetUrl: 'https://example.com',
+    },
+    {
+      id: `sm-${Date.now()}-2`,
+      label: 'Help & Guide',
+      description: 'Read this section offline inside the app',
+      icon: 'FileText',
+      actionType: 'html-page',
+      targetHtml: '<h2>Help & Guide</h2><p>Add your own content for this section.</p>',
+    },
+  ];
+}
 
 interface MenuEditorProps {
   config: AppConfig;
@@ -368,22 +391,36 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ config, onChange }) => {
                       <label className="block text-xs font-medium text-slate-400 mb-1.5">
                         Click Action Destination
                       </label>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         {[
                           { id: 'website', label: 'External Website', icon: ExternalLink },
                           { id: 'html-page', label: 'HTML Document', icon: FileCode },
                           { id: 'share', label: 'Native Share', icon: Share2 },
                           { id: 'contact', label: 'Support / Email', icon: Mail },
+                          { id: 'submenu', label: 'Submenu', icon: FolderTree },
                         ].map((act) => {
                           const IconComp = act.icon;
                           return (
                             <button
                               key={act.id}
                               type="button"
-                              onClick={() => updateItem(item.id, { actionType: act.id as MenuActionType })}
+                              onClick={() => {
+                                const patch: Partial<MenuItem> = {
+                                  actionType: act.id as MenuActionType,
+                                };
+                                if (
+                                  act.id === 'submenu' &&
+                                  (!item.children || item.children.length < 2)
+                                ) {
+                                  patch.children = defaultSubmenuChildren();
+                                }
+                                updateItem(item.id, patch);
+                              }}
                               className={`flex items-center gap-1.5 p-2 rounded-lg text-xs font-medium transition ${
                                 item.actionType === act.id
-                                  ? 'bg-indigo-600 text-white font-semibold'
+                                  ? act.id === 'submenu'
+                                    ? 'bg-violet-600 text-white font-semibold'
+                                    : 'bg-indigo-600 text-white font-semibold'
                                   : 'bg-slate-800 text-slate-400 hover:text-white'
                               }`}
                             >
@@ -432,6 +469,14 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ config, onChange }) => {
                           Renders instantly inside the Android app without requiring internet connection.
                         </span>
                       </div>
+                    )}
+
+                    {/* Submenu destinations */}
+                    {item.actionType === 'submenu' && (
+                      <SubmenuLinksEditor
+                        links={item.children || []}
+                        onChange={(links) => updateItem(item.id, { children: links })}
+                      />
                     )}
                   </div>
                 )}

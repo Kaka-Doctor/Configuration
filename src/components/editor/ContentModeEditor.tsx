@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import type { AppConfig, LaunchpadIconItem } from '../../types/appConfig';
+import type { AppConfig, LaunchpadIconItem, SubmenuLink } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';
+import { SubmenuLinksEditor } from './SubmenuLinksEditor';
 import {
   Globe,
   LayoutGrid,
@@ -12,7 +13,29 @@ import {
   FileCode,
   Sparkles,
   ChevronDown,
+  FolderTree,
 } from 'lucide-react';
+
+function defaultSubmenuChildren(): SubmenuLink[] {
+  return [
+    {
+      id: `sm-${Date.now()}-1`,
+      label: 'Our Website',
+      description: 'Open the live site in the browser',
+      icon: 'Globe',
+      actionType: 'website',
+      targetUrl: 'https://example.com',
+    },
+    {
+      id: `sm-${Date.now()}-2`,
+      label: 'Quick Guide',
+      description: 'Read this section offline inside the app',
+      icon: 'FileText',
+      actionType: 'html-page',
+      targetHtml: '<h2>Quick Guide</h2><p>Add your own content for this section.</p>',
+    },
+  ];
+}
 
 interface ContentModeEditorProps {
   config: AppConfig;
@@ -310,6 +333,8 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                           <span className="text-[11px] text-slate-400 ml-2">
                             {iconItem.actionType === 'website'
                               ? `🔗 ${iconItem.targetUrl || 'Website'}`
+                              : iconItem.actionType === 'submenu'
+                              ? `🗂️ Submenu · ${iconItem.children?.length || 0} destinations`
                               : '📄 HTML Document'}
                           </span>
                         </div>
@@ -453,15 +478,15 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                             />
                           </div>
 
-                          <div>
+                          <div className="sm:col-span-3">
                             <label className="block text-xs font-medium text-slate-400 mb-1">
                               Action Type
                             </label>
-                            <div className="flex items-center gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               <button
                                 type="button"
                                 onClick={() => updateIconItem(iconItem.id, { actionType: 'website' })}
-                                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition ${
+                                className={`py-1.5 px-2 rounded-lg text-xs font-medium transition ${
                                   iconItem.actionType === 'website'
                                     ? 'bg-indigo-600 text-white'
                                     : 'bg-slate-800 text-slate-400 hover:text-white'
@@ -472,13 +497,31 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                               <button
                                 type="button"
                                 onClick={() => updateIconItem(iconItem.id, { actionType: 'html-page' })}
-                                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition ${
+                                className={`py-1.5 px-2 rounded-lg text-xs font-medium transition ${
                                   iconItem.actionType === 'html-page'
                                     ? 'bg-pink-600 text-white'
                                     : 'bg-slate-800 text-slate-400 hover:text-white'
                                 }`}
                               >
                                 HTML Document
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const patch: Partial<LaunchpadIconItem> = { actionType: 'submenu' };
+                                  if (!iconItem.children || iconItem.children.length < 2) {
+                                    patch.children = defaultSubmenuChildren();
+                                  }
+                                  updateIconItem(iconItem.id, patch);
+                                }}
+                                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-medium transition ${
+                                  iconItem.actionType === 'submenu'
+                                    ? 'bg-violet-600 text-white'
+                                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                <FolderTree size={13} />
+                                Submenu
                               </button>
                             </div>
                           </div>
@@ -514,6 +557,15 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                               className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white font-mono text-xs focus:outline-hidden"
                             />
                           </div>
+                        )}
+
+                        {/* Action Target: Submenu destinations */}
+                        {iconItem.actionType === 'submenu' && (
+                          <SubmenuLinksEditor
+                            links={iconItem.children || []}
+                            onChange={(links) => updateIconItem(iconItem.id, { children: links })}
+                            accent="pink"
+                          />
                         )}
                       </div>
                     )}

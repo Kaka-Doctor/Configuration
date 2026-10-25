@@ -62,6 +62,60 @@ test('generateAppHtml contains splash screen and topbar if enabled', () => {
   assert.ok(html.includes('btn-share-app'), 'Includes native share button');
 });
 
+test('generated app renders submenus that group several destinations', () => {
+  const config = {
+    ...DEFAULT_APP_CONFIG,
+    navigation: {
+      ...DEFAULT_APP_CONFIG.navigation,
+      items: [
+        {
+          id: 'menu-submenu',
+          label: 'Tools',
+          icon: 'FolderTree',
+          actionType: 'submenu' as const,
+          children: [
+            {
+              id: 'child-1',
+              label: 'Offline Handbook',
+              description: 'Read inside the app',
+              icon: 'FileText',
+              actionType: 'html-page' as const,
+              targetHtml: '<h2>Handbook</h2>',
+            },
+            {
+              id: 'child-2',
+              label: 'Live Dashboard',
+              icon: 'Globe',
+              actionType: 'website' as const,
+              targetUrl: 'https://example.com/dashboard',
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const html = generateAppHtml(config);
+  assert.ok(html.includes('function openSubmenu'), 'defines the submenu opener');
+  assert.ok(html.includes('function runDestination'), 'routes child destinations');
+  assert.ok(html.includes('submenu-list'), 'styles the submenu list');
+  assert.ok(html.includes('Offline Handbook'), 'serializes child labels');
+  assert.ok(html.includes('"children"'), 'serializes child destinations');
+  assert.ok(html.includes('&#8250;'), 'shows a chevron for each destination');
+});
+
+test('default preset includes a working multi-destination submenu', () => {
+  const submenu = DEFAULT_APP_CONFIG.launchpadConfig.icons.find(
+    (icon) => icon.actionType === 'submenu'
+  );
+  assert.ok(submenu, 'demo config ships a submenu card');
+  assert.ok((submenu.children?.length ?? 0) >= 2, 'submenu combines at least two sections');
+  assert.ok(
+    submenu.children?.every((child) => child.label && child.actionType),
+    'every child has a label and an action'
+  );
+});
+
 test('menu HTML content cannot break out of the generated script block', () => {
   const config = {
     ...DEFAULT_APP_CONFIG,

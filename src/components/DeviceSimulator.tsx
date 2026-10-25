@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppConfig, LaunchpadIconItem, MenuItem } from '../types/appConfig';
+import type { AppConfig, LaunchpadIconItem, MenuItem, SubmenuLink } from '../types/appConfig';
 import { renderAppIcon } from '../utils/iconMap';
 import {
   RotateCw,
@@ -13,12 +13,14 @@ import {
   Signal,
   Battery,
   ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Copy,
   MessageCircle,
   Mail,
   Send,
   Sparkles,
+  FolderTree,
 } from 'lucide-react';
 
 interface DeviceSimulatorProps {
@@ -34,6 +36,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
   const [activeBottomNavId, setActiveBottomNavId] = useState<string>('');
   const [activeTopTabId, setActiveTopTabId] = useState<string>('');
   const [activeModalContent, setActiveModalContent] = useState<{ title: string; html: string } | null>(null);
+  const [activeSubmenu, setActiveSubmenu] = useState<{ title: string; links: SubmenuLink[] } | null>(null);
   const [inAppBrowserUrl, setInAppBrowserUrl] = useState<string | null>(null);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -63,6 +66,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
     setShowSplash(true);
     setIsDrawerOpen(false);
     setActiveModalContent(null);
+    setActiveSubmenu(null);
     setInAppBrowserUrl(null);
     setTimeout(() => {
       setShowSplash(false);
@@ -80,7 +84,9 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
   };
 
   const handleLaunchpadIconClick = (icon: LaunchpadIconItem) => {
-    if (icon.actionType === 'website' && icon.targetUrl) {
+    if (icon.actionType === 'submenu') {
+      setActiveSubmenu({ title: icon.title, links: icon.children || [] });
+    } else if (icon.actionType === 'website' && icon.targetUrl) {
       setInAppBrowserUrl(icon.targetUrl);
     } else if (icon.actionType === 'html-page' && icon.htmlContent) {
       setActiveModalContent({ title: icon.title, html: icon.htmlContent });
@@ -89,7 +95,9 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
 
   const handleMenuItemClick = (item: MenuItem) => {
     setIsDrawerOpen(false);
-    if (item.actionType === 'share') {
+    if (item.actionType === 'submenu') {
+      setActiveSubmenu({ title: item.label, links: item.children || [] });
+    } else if (item.actionType === 'share') {
       handleShareTrigger();
     } else if (item.actionType === 'html-page' && item.targetHtml) {
       setActiveModalContent({ title: item.label, html: item.targetHtml });
@@ -100,6 +108,27 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
         title: item.label,
         html: `<h3>Support & Contact</h3><p>Need assistance with this application? Email our team at: <strong>${item.targetUrl || 'support@example.com'}</strong></p>`,
       });
+    }
+  };
+
+  const handleSubmenuLinkClick = (link: SubmenuLink) => {
+    setActiveSubmenu(null);
+    if (link.actionType === 'share') {
+      handleShareTrigger();
+    } else if (link.actionType === 'contact') {
+      setActiveModalContent({
+        title: link.label,
+        html: `<h3>${link.label}</h3><p>Get in touch with our team at: <strong>${
+          link.targetUrl || 'support@example.com'
+        }</strong></p>`,
+      });
+    } else if (link.actionType === 'html-page') {
+      setActiveModalContent({
+        title: link.label,
+        html: link.targetHtml || '<p>No content available</p>',
+      });
+    } else if (link.actionType === 'website' && link.targetUrl) {
+      setInAppBrowserUrl(link.targetUrl);
     }
   };
 
@@ -443,10 +472,18 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                           </div>
                         </div>
 
-                        <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-slate-100">
+                        <div className="mt-2.5 flex items-center justify-between gap-1 text-[10px] text-slate-400 pt-1.5 border-t border-slate-100">
                           <span className="truncate">{item.category}</span>
-                          <span className="text-indigo-600 font-semibold group-hover:translate-x-0.5 transition-transform">
-                            {item.actionType === 'website' ? 'Open URL →' : 'View File →'}
+                          <span
+                            className={`font-semibold group-hover:translate-x-0.5 transition-transform whitespace-nowrap ${
+                              item.actionType === 'submenu' ? 'text-violet-600' : 'text-indigo-600'
+                            }`}
+                          >
+                            {item.actionType === 'website'
+                              ? 'Open URL →'
+                              : item.actionType === 'submenu'
+                              ? `${item.children?.length || 0} places →`
+                              : 'View File →'}
                           </span>
                         </div>
                       </div>
@@ -606,6 +643,85 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
               </div>
             )}
 
+            {/* Submenu Sheet — one icon reveals several destinations */}
+            {activeSubmenu && (
+              <div
+                className="absolute inset-0 z-[46] flex flex-col justify-end bg-black/50 animate-in fade-in duration-200"
+                onClick={() => setActiveSubmenu(null)}
+              >
+                <div
+                  className="bg-white rounded-t-3xl max-h-[78%] flex flex-col shadow-2xl animate-in slide-in-from-bottom-6 duration-200"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between px-4 pt-3 pb-2.5 border-b border-slate-100">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-violet-600 font-bold">
+                        <FolderTree size={11} />
+                        <span>Submenu</span>
+                      </div>
+                      <div className="font-bold text-sm text-slate-800 truncate">
+                        {activeSubmenu.title}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveSubmenu(null)}
+                      className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                      aria-label="Close submenu"
+                    >
+                      <X size={17} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-y-auto p-3 space-y-2">
+                    {activeSubmenu.links.length === 0 && (
+                      <div className="p-5 text-center text-[11px] text-slate-500 border border-dashed border-slate-300 rounded-xl">
+                        No destinations in this submenu yet. Add two or more in the editor.
+                      </div>
+                    )}
+                    {activeSubmenu.links.map((link) => (
+                      <button
+                        key={link.id}
+                        onClick={() => handleSubmenuLinkClick(link)}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white active:scale-[0.99] hover:border-violet-300 text-left transition"
+                      >
+                        {link.customImageUrl ? (
+                          <img
+                            src={link.customImageUrl}
+                            alt=""
+                            className="w-9 h-9 rounded-xl object-cover shrink-0"
+                          />
+                        ) : (
+                          <span className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+                            {renderAppIcon(link.icon, 17)}
+                          </span>
+                        )}
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-xs font-semibold text-slate-800 truncate">
+                            {link.label}
+                          </span>
+                          {link.description && (
+                            <span className="block text-[11px] text-slate-500 line-clamp-2 leading-snug">
+                              {link.description}
+                            </span>
+                          )}
+                        </span>
+                        {link.badge && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 shrink-0">
+                            {link.badge}
+                          </span>
+                        )}
+                        <ChevronRight size={16} className="text-slate-400 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="px-4 py-2 text-center text-[10px] text-slate-400 border-t border-slate-100">
+                    One icon · {activeSubmenu.links.length} places to go
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Drawer Navigation Panel */}
             <div
               className={`absolute inset-0 z-50 bg-black/50 transition-opacity duration-300 ${
@@ -675,11 +791,20 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                         )}
                         <span>{item.label}</span>
                       </div>
-                      {item.badge && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                          {item.badge}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.badge && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                            {item.badge}
+                          </span>
+                        )}
+                        {item.actionType === 'submenu' && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                            <FolderTree size={10} />
+                            {item.children?.length || 0}
+                          </span>
+                        )}
+                        <ChevronRight size={14} className="text-slate-400" />
+                      </div>
                     </button>
                   ))}
                 </div>
