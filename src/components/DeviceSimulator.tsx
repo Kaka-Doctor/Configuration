@@ -254,15 +254,23 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                   )}
 
                   {config.topBar.showLogo && (
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-xs"
-                      style={{
-                        backgroundColor: config.appLogo.bgColor,
-                        color: config.appLogo.iconColor,
-                      }}
-                    >
-                      {renderAppIcon(config.appLogo.icon, 16)}
-                    </div>
+                    config.topBar.customLogoUrl || config.appLogo.customImageUrl ? (
+                      <img
+                        src={config.topBar.customLogoUrl || config.appLogo.customImageUrl}
+                        alt="Logo"
+                        className="w-7 h-7 rounded-lg object-cover shrink-0 shadow-xs"
+                      />
+                    ) : (
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-xs"
+                        style={{
+                          backgroundColor: config.appLogo.bgColor,
+                          color: config.appLogo.iconColor,
+                        }}
+                      >
+                        {renderAppIcon(config.appLogo.icon, 16)}
+                      </div>
+                    )
                   )}
 
                   <span className="font-semibold text-base truncate tracking-tight">
@@ -413,12 +421,18 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                           </span>
                         )}
 
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white mb-2 shadow-sm transition-transform group-hover:scale-105"
-                          style={{ backgroundColor: item.color }}
-                        >
-                          {renderAppIcon(item.icon, 20)}
-                        </div>
+                        {item.customImageUrl ? (
+                          <div className="w-10 h-10 rounded-xl overflow-hidden mb-2 shadow-sm border border-slate-100">
+                            <img src={item.customImageUrl} alt={item.title} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white mb-2 shadow-sm transition-transform group-hover:scale-105"
+                            style={{ backgroundColor: item.color }}
+                          >
+                            {renderAppIcon(item.icon, 20)}
+                          </div>
+                        )}
 
                         <div>
                           <div className="text-xs font-bold text-slate-800 line-clamp-1">
@@ -607,20 +621,38 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
               >
                 {/* Drawer Header */}
                 <div
-                  className="p-5 text-white flex flex-col justify-end"
-                  style={{ backgroundColor: config.navigation.drawerHeader.bannerColor }}
+                  className="p-5 text-white flex flex-col justify-end relative overflow-hidden"
+                  style={{
+                    backgroundColor: config.navigation.drawerHeader.bannerColor,
+                    backgroundImage: config.navigation.drawerHeader.customBannerUrl ? `url(${config.navigation.drawerHeader.customBannerUrl})` : undefined,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                  }}
                 >
-                  {config.navigation.drawerHeader.showUserAvatar && (
-                    <div className="w-12 h-12 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center font-bold text-lg mb-2">
-                      {config.shortName.slice(0, 1)}
-                    </div>
+                  {config.navigation.drawerHeader.customBannerUrl && (
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
                   )}
-                  <h3 className="font-bold text-base leading-tight">
-                    {config.navigation.drawerHeader.title}
-                  </h3>
-                  <p className="text-xs text-white/80 mt-0.5">
-                    {config.navigation.drawerHeader.subtitle}
-                  </p>
+                  <div className="relative z-10">
+                    {config.navigation.drawerHeader.showUserAvatar && (
+                      config.navigation.drawerHeader.customAvatarUrl ? (
+                        <img
+                          src={config.navigation.drawerHeader.customAvatarUrl}
+                          alt="User Avatar"
+                          className="w-12 h-12 rounded-full object-cover border-2 border-white/60 mb-2 shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center font-bold text-lg mb-2">
+                          {config.shortName.slice(0, 1)}
+                        </div>
+                      )
+                    )}
+                    <h3 className="font-bold text-base leading-tight">
+                      {config.navigation.drawerHeader.title}
+                    </h3>
+                    <p className="text-xs text-white/80 mt-0.5">
+                      {config.navigation.drawerHeader.subtitle}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Drawer Items */}
@@ -738,9 +770,19 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       : config.splashScreen.bgColor,
                 }}
               >
-                <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl mb-4 animate-bounce">
-                  {renderAppIcon(config.splashScreen.logoIcon, 40, 'text-white')}
-                </div>
+                {config.splashScreen.customImageUrl ? (
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden mb-4 shadow-xl border border-white/20 bg-white/10 backdrop-blur-sm p-1">
+                    <img
+                      src={config.splashScreen.customImageUrl}
+                      alt="Splash"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl mb-4 animate-bounce">
+                    {renderAppIcon(config.splashScreen.logoIcon, 40, 'text-white')}
+                  </div>
+                )}
                 <h1 className="text-xl font-extrabold tracking-tight text-center">
                   {config.splashScreen.title}
                 </h1>

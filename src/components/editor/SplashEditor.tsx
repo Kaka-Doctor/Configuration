@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppConfig } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
+import { ImageUploadField } from '../common/ImageUploadField';
 import { Play, Sparkles, Clock, Palette } from 'lucide-react';
 
 interface SplashEditorProps {
@@ -103,6 +104,19 @@ export const SplashEditor: React.FC<SplashEditorProps> = ({ config, onChange, on
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Custom Splash Image Upload */}
+            <div className="pt-2 border-t border-slate-800">
+              <ImageUploadField
+                label="Or Upload Custom Splash Image / Graphic from Device"
+                description="Upload your high-res splash logo or brand graphic (PNG, JPG, WebP, SVG). Overrides the vector icon on the cold launch screen."
+                value={config.splashScreen.customImageUrl}
+                onChange={(dataUrl) => updateSplash({ customImageUrl: dataUrl })}
+                onClear={() => updateSplash({ customImageUrl: undefined })}
+                placeholderText="Upload splash graphic / logo from your device"
+                previewShape="rounded"
+              />
             </div>
           </div>
 

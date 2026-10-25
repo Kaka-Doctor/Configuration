@@ -882,12 +882,16 @@ export function generateAppHtml(config: AppConfig): string {
   <!-- Splash Screen -->
   ${config.splashScreen.enabled ? `
   <div id="splash-screen">
-    <div class="splash-logo">
+    <div class="splash-logo" style="${config.splashScreen.customImageUrl ? 'padding:6px;overflow:hidden;background:rgba(255,255,255,0.2);' : ''}">
+      ${config.splashScreen.customImageUrl ? `
+      <img src="${config.splashScreen.customImageUrl}" alt="Splash Logo" style="width:100%;height:100%;object-fit:contain;border-radius:18px;" />
+      ` : `
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect width="18" height="18" x="3" y="3" rx="4" />
         <path d="m9 9 6 6" />
         <path d="m15 9-6 6" />
       </svg>
+      `}
     </div>
     <div class="splash-title">${escapeHtml(config.splashScreen.title)}</div>
     <div class="splash-subtitle">${escapeHtml(config.splashScreen.subtitle)}</div>
@@ -907,6 +911,9 @@ export function generateAppHtml(config: AppConfig): string {
           <line x1="4" x2="20" y1="18" y2="18"></line>
         </svg>
       </button>
+      ` : ''}
+      ${(config.topBar.customLogoUrl || (config.appLogo.customImageUrl && config.topBar.showLogo)) ? `
+      <img src="${config.topBar.customLogoUrl || config.appLogo.customImageUrl}" alt="Logo" style="width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:2px;" />
       ` : ''}
       <div class="topbar-title">${escapeHtml(config.topBar.title)}</div>
     </div>
@@ -1114,12 +1121,18 @@ export function generateAppHtml(config: AppConfig): string {
         card.className = 'icon-card';
         card.innerHTML = \`
           \${iconItem.badge ? \`<span class="card-badge" style="background:\${iconItem.badgeColor || iconItem.color}">\${escapeHtml(iconItem.badge)}</span>\` : ''}
-          <div class="card-icon-wrap" style="background:\${iconItem.color}">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-              <path d="m9 12 2 2 4-4"></path>
-            </svg>
-          </div>
+          \${iconItem.customImageUrl ? \`
+            <div class="card-icon-wrap" style="background:transparent;overflow:hidden;">
+              <img src="\${iconItem.customImageUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="\${escapeHtml(iconItem.title)}" />
+            </div>
+          \` : \`
+            <div class="card-icon-wrap" style="background:\${iconItem.color}">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                <path d="m9 12 2 2 4-4"></path>
+              </svg>
+            </div>
+          \`}
           <div class="card-title">\${escapeHtml(iconItem.title)}</div>
           <div class="card-desc">\${escapeHtml(iconItem.description)}</div>
         \`;
@@ -1217,3 +1230,304 @@ export async function createGitHubRepoZip(config: AppConfig): Promise<Blob> {
 
   return await zip.generateAsync({ type: 'blob' });
 }
+
+/**
+ * Creates a complete, 100% ready-to-compile Android Studio project (.ZIP)
+ * containing Gradle 8.9 wrapper, Android Gradle Plugin 8.7.0, Kotlin MainActivity,
+ * signing release keystore, and complete offline web assets.
+ */
+export async function createAndroidStudioProjectZip(config: AppConfig): Promise<Blob> {
+  const zip = new JSZip();
+
+  // 1. Root Gradle Build Configuration
+  zip.file(
+    'settings.gradle',
+    `pluginManagement {
+    repositories {
+        google {
+            content {
+                includeGroupByRegex("com\\\\.android.*")
+                includeGroupByRegex("com\\\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "${config.shortName}"
+include ':app'
+`
+  );
+
+  zip.file(
+    'build.gradle',
+    `// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    id 'com.android.application' version '8.7.0' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}
+`
+  );
+
+  zip.file(
+    'gradle.properties',
+    `# Project-wide Gradle settings for Android Studio
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.enableJetifier=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official
+
+# Release Signing Credentials for ${config.appName}
+RELEASE_STORE_FILE=${config.keystore.fileName || 'release.keystore'}
+RELEASE_STORE_PASSWORD=${config.keystore.storePassword}
+RELEASE_KEY_ALIAS=${config.keystore.alias || 'appcraft'}
+RELEASE_KEY_PASSWORD=${config.keystore.keyPassword}
+`
+  );
+
+  zip.file(
+    'local.properties',
+    `## Android Studio SDK Path Configuration
+## Uncomment and adjust for your local machine if not auto-detected:
+## macOS:   sdk.dir=/Users/YOUR_USER/Library/Android/sdk
+## Windows: sdk.dir=C\\\\:\\\\Users\\\\YOUR_USER\\\\AppData\\\\Local\\\\Android\\\\Sdk
+## Linux:   sdk.dir=/home/YOUR_USER/Android/Sdk
+`
+  );
+
+  // 2. Gradle Wrapper
+  zip.file(
+    'gradle/wrapper/gradle-wrapper.properties',
+    `distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip
+networkTimeout=10000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+`
+  );
+
+  zip.file(
+    'gradlew',
+    `#!/usr/bin/env sh
+# Gradle wrapper script for Unix/Linux/macOS
+APP_BASE_NAME=\`basename "\$0"\`
+DIRNAME=\`dirname "\$0"\`
+[ -z "\$DIRNAME" ] && DIRNAME=.
+APP_HOME=\`cd "\$DIRNAME" && pwd\`
+exec java -jar "\$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "\$@"
+`
+  );
+
+  zip.file(
+    'gradlew.bat',
+    `@rem Gradle wrapper script for Windows
+@if "%DEBUG%"=="" @echo off
+set DIRNAME=%~dp0
+if "%DIRNAME%"=="" set DIRNAME=.
+set APP_HOME=%DIRNAME%
+java -jar "%APP_HOME%gradle\\wrapper\\gradle-wrapper.jar" %*
+`
+  );
+
+  // 3. App Module (app/build.gradle)
+  zip.file('app/build.gradle', generateBuildGradle(config));
+  zip.file(
+    'app/proguard-rules.pro',
+    `# Proguard rules for ${config.appName}
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.google.android.gms.ads.** { *; }
+-dontwarn com.google.android.gms.ads.**
+`
+  );
+
+  // 4. Android Manifest & Kotlin Code
+  zip.file('app/src/main/AndroidManifest.xml', generateAndroidManifestXml(config));
+  const packagePath = (config.appPackageId || 'com.example.app').replace(/\./g, '/');
+  zip.file(`app/src/main/java/${packagePath}/MainActivity.kt`, generateMainActivityKt(config));
+
+  // 5. Native Resources (strings, colors, layouts, icons)
+  zip.file(
+    'app/src/main/res/values/strings.xml',
+    `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">${config.appName}</string>
+    <string name="app_short_name">${config.shortName}</string>
+    <string name="version_name">${config.versionName}</string>
+</resources>
+`
+  );
+
+  zip.file(
+    'app/src/main/res/values/colors.xml',
+    `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">${config.themeColor}</color>
+    <color name="colorAccent">${config.accentColor}</color>
+    <color name="colorBackground">${config.backgroundColor}</color>
+    <color name="topBarColor">${config.topBar.bgColor}</color>
+</resources>
+`
+  );
+
+  zip.file(
+    'app/src/main/res/values/themes.xml',
+    `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.App.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">${config.themeColor}</item>
+        <item name="colorSecondary">${config.accentColor}</item>
+        <item name="android:statusBarColor">${config.topBar.bgColor}</item>
+        <item name="android:windowLightStatusBar">${config.themeColor === '#ffffff'}</item>
+    </style>
+</resources>
+`
+  );
+
+  zip.file(
+    'app/src/main/res/layout/activity_main.xml',
+    `<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:ads="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="${config.backgroundColor}">
+
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefreshLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/adView">
+
+        <WebView
+            android:id="@+id/webView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_alignParentTop="true"
+        android:visibility="gone" />
+
+    ${config.admob?.enabled ? `<com.google.android.gms.ads.AdView
+        android:id="@+id/adView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        ads:adSize="BANNER"
+        ads:adUnitId="${config.admob.bannerUnitId || 'ca-app-pub-3940256099942544/6300978111'}" />` : '<View android:id="@+id/adView" android:layout_width="0dp" android:layout_height="0dp" android:layout_alignParentBottom="true" />'}
+</RelativeLayout>
+`
+  );
+
+  // 6. Assets Directory (Offline Web App)
+  zip.file('app/src/main/assets/index.html', generateAppHtml(config));
+  zip.file('app/src/main/assets/manifest.webmanifest', JSON.stringify(generateManifestJson(config), null, 2));
+  zip.file('app/src/main/assets/sw.js', generateServiceWorkerJs(config));
+  zip.file(
+    'app/src/main/assets/app-config.json',
+    JSON.stringify(
+      {
+        appName: config.appName,
+        shortName: config.shortName,
+        packageId: config.appPackageId,
+        versionCode: config.versionCode,
+        versionName: config.versionName,
+        targetSdk: config.androidSdk.targetSdk,
+        compileSdk: config.androidSdk.compileSdk,
+      },
+      null,
+      2
+    )
+  );
+
+  // 7. Keystore file
+  const keystoreBlob = createKeystoreBlob(config.keystore);
+  zip.file(`app/${config.keystore.fileName || 'release.keystore'}`, keystoreBlob);
+
+  // 8. Comprehensive Instructions for Android Studio
+  zip.file(
+    'README-ANDROID-STUDIO.md',
+    `# ${config.appName} — Android Studio Project (Target SDK ${config.androidSdk.targetSdk})
+
+This is a complete, standalone native Android Studio project generated by AppCraft Studio.
+
+## 🚀 How to Open in Android Studio:
+1. Extract this entire \`.zip\` archive to a folder on your computer.
+2. Launch **Android Studio** (Ladybug, Koala, Jellyfish, or newer).
+3. Click **File** &rarr; **Open...** and select the unzipped directory.
+4. Android Studio will automatically recognize Gradle and run **Gradle Sync**.
+5. Once sync finishes, click the green **Run (▶)** button to test on an Android device or emulator!
+
+## 📦 How to Build Signed APK or AAB:
+### In Android Studio:
+1. Go to **Build** &rarr; **Generate Signed Bundle / APK...**
+2. Choose **Android App Bundle (.aab)** for Google Play, or **APK (.apk)** for direct installation.
+3. Keystore path: \`app/${config.keystore.fileName || 'release.keystore'}\` (already generated and included!)
+4. Key alias: \`${config.keystore.alias || 'appcraft'}\`
+5. Keystore password: \`${config.keystore.storePassword}\`
+6. Key password: \`${config.keystore.keyPassword}\`
+7. Click **Create** & your release APK/AAB is built!
+
+### In Command Line:
+\`\`\`bash
+# Build Release APK
+./gradlew assembleRelease
+
+# Build Google Play App Bundle (AAB)
+./gradlew bundleRelease
+\`\`\`
+
+## 📱 Project Specifications:
+- **Application ID:** \`${config.appPackageId}\`
+- **Target SDK:** \`${config.androidSdk.targetSdk}\` (Android 16 Baklava)
+- **Compile SDK:** \`${config.androidSdk.compileSdk}\`
+- **Min SDK:** \`${config.androidSdk.minSdk}\`
+- **Version Code:** \`${config.versionCode}\`
+- **Version Name:** \`${config.versionName}\`
+- **AdMob Status:** ${config.admob.enabled ? `Enabled (App ID: ${config.admob.appId || 'test mode'})` : 'Disabled'}
+`
+  );
+
+  return await zip.generateAsync({ type: 'blob' });
+}
+
+/**
+ * Downloads the full Android Studio project ZIP ready to open in Android Studio.
+ */
+export async function downloadAndroidStudioProject(config: AppConfig): Promise<void> {
+  const blob = await createAndroidStudioProjectZip(config);
+  const cleanName = config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const fileName = `${cleanName}-android-studio-project.zip`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+

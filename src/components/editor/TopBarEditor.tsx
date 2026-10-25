@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppConfig } from '../../types/appConfig';
+import { ImageUploadField } from '../common/ImageUploadField';
 import { Share2, LayoutTemplate, Palette, Sparkles, Sliders } from 'lucide-react';
 
 interface TopBarEditorProps {
@@ -102,6 +103,21 @@ export const TopBarEditor: React.FC<TopBarEditorProps> = ({ config, onChange }) 
                 <div className="w-10 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
               </label>
             </div>
+
+            {/* Custom Header Logo Upload */}
+            {config.topBar.showLogo && (
+              <div className="pt-2 border-t border-slate-800">
+                <ImageUploadField
+                  label="Custom Header Logo Image from Device (Optional)"
+                  description="Upload a custom header brand badge (PNG, JPG, SVG, WebP) to display directly in the top app header."
+                  value={config.topBar.customLogoUrl}
+                  onChange={(dataUrl) => updateTopBar({ customLogoUrl: dataUrl })}
+                  onClear={() => updateTopBar({ customLogoUrl: undefined })}
+                  placeholderText="Upload top bar brand logo from your device"
+                  previewShape="rounded"
+                />
+              </div>
+            )}
           </div>
 
           {/* Top Bar Action Buttons (Sharing, Refresh, Search, Menu) */}

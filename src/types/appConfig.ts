@@ -9,6 +9,7 @@ export interface MenuItem {
   targetHtml?: string;
   badge?: string;
   isExternal?: boolean;
+  customImageUrl?: string;
 }
 
 export interface LaunchpadIconItem {
@@ -23,6 +24,7 @@ export interface LaunchpadIconItem {
   badge?: string;
   badgeColor?: string;
   color: string;
+  customImageUrl?: string;
 }
 
 export interface KeystoreConfig {
@@ -52,6 +54,7 @@ export interface AppConfig {
   appLogo: {
     icon: string;
     customUrl?: string;
+    customImageUrl?: string;
     shape: 'rounded-square' | 'circle' | 'squircle' | 'badge';
     bgColor: string;
     iconColor: string;
@@ -66,6 +69,8 @@ export interface AppConfig {
     gradientFrom: string;
     gradientTo: string;
     logoIcon: string;
+    customImageUrl?: string;
+    imageFit?: 'contain' | 'cover';
     showSpinner: boolean;
     spinnerType: 'circle' | 'dots' | 'pulse';
   };
@@ -73,6 +78,7 @@ export interface AppConfig {
     enabled: boolean;
     title: string;
     showLogo: boolean;
+    customLogoUrl?: string;
     showShareButton: boolean;
     showSearchButton: boolean;
     showRefreshButton: boolean;
@@ -87,6 +93,8 @@ export interface AppConfig {
     items: MenuItem[];
     drawerHeader: {
       showUserAvatar: boolean;
+      customAvatarUrl?: string;
+      customBannerUrl?: string;
       title: string;
       subtitle: string;
       bannerColor: string;

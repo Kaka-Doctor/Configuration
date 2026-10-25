@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppConfig, MenuItem, MenuActionType } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
+import { ImageUploadField } from '../common/ImageUploadField';
 import {
   Menu as MenuIcon,
   Plus,
@@ -190,6 +191,34 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ config, onChange }) => {
                 />
                 <div className="w-10 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
               </label>
+            </div>
+
+            {/* Custom Avatar Upload from Device */}
+            {config.navigation.drawerHeader.showUserAvatar && (
+              <div className="pt-2 border-t border-slate-800">
+                <ImageUploadField
+                  label="Upload Drawer Profile / Avatar Image"
+                  description="Custom profile photo or avatar from your device to show at the top of the navigation drawer."
+                  value={config.navigation.drawerHeader.customAvatarUrl}
+                  onChange={(dataUrl) => updateDrawerHeader({ customAvatarUrl: dataUrl })}
+                  onClear={() => updateDrawerHeader({ customAvatarUrl: undefined })}
+                  placeholderText="Upload drawer avatar image"
+                  previewShape="circle"
+                />
+              </div>
+            )}
+
+            {/* Custom Banner Background Upload from Device */}
+            <div className="pt-2 border-t border-slate-800">
+              <ImageUploadField
+                label="Upload Drawer Header Banner Background (Optional)"
+                description="Custom backdrop header image (PNG, JPG, WebP) for the slide-out navigation menu."
+                value={config.navigation.drawerHeader.customBannerUrl}
+                onChange={(dataUrl) => updateDrawerHeader({ customBannerUrl: dataUrl })}
+                onClear={() => updateDrawerHeader({ customBannerUrl: undefined })}
+                placeholderText="Upload drawer header banner background"
+                previewShape="banner"
+              />
             </div>
           </div>
         </div>

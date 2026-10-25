@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppConfig, LaunchpadIconItem } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
+import { ImageUploadField } from '../common/ImageUploadField';
 import {
   Globe,
   LayoutGrid,
@@ -387,6 +388,19 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                               <span className="text-slate-400 text-[10px]">Change</span>
                             </button>
                           </div>
+                        </div>
+
+                        {/* Custom Card Image Upload */}
+                        <div className="pt-2 border-t border-slate-800">
+                          <ImageUploadField
+                            label="Upload Custom Card Artwork / Image from Device (Optional)"
+                            description="Use a photo or custom icon from your device instead of the default vector icon."
+                            value={iconItem.customImageUrl}
+                            onChange={(dataUrl) => updateIconItem(iconItem.id, { customImageUrl: dataUrl })}
+                            onClear={() => updateIconItem(iconItem.id, { customImageUrl: undefined })}
+                            placeholderText="Upload card image from device"
+                            previewShape="square"
+                          />
                         </div>
 
                         <div>

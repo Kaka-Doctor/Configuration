@@ -16,6 +16,7 @@ import {
   createKeystoreBlob,
   generateSigningGradleProperties,
 } from '../../utils/keystoreGenerator';
+import { downloadApk, downloadAab } from '../../utils/apkBuilder';
 import {
   X,
   Download,
@@ -30,6 +31,7 @@ import {
   Smartphone,
   Eye,
   Key,
+  Package,
 } from 'lucide-react';
 
 interface GitHubExportModalProps {

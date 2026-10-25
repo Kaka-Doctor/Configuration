@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppConfig } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
+import { ImageUploadField } from '../common/ImageUploadField';
 import { Palette, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 interface BrandingEditorProps {
@@ -108,7 +109,7 @@ export const BrandingEditor: React.FC<BrandingEditorProps> = ({ config, onChange
           {/* Logo Preview */}
           <div className="flex flex-col items-center">
             <div
-              className={`w-20 h-20 flex items-center justify-center transition-all shadow-lg ${
+              className={`w-20 h-20 flex items-center justify-center transition-all shadow-lg overflow-hidden ${
                 config.appLogo.shape === 'circle'
                   ? 'rounded-full'
                   : config.appLogo.shape === 'squircle'
@@ -122,7 +123,15 @@ export const BrandingEditor: React.FC<BrandingEditorProps> = ({ config, onChange
                 color: config.appLogo.iconColor,
               }}
             >
-              {renderAppIcon(config.appLogo.icon, 38)}
+              {config.appLogo.customImageUrl ? (
+                <img
+                  src={config.appLogo.customImageUrl}
+                  alt="App Logo"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                renderAppIcon(config.appLogo.icon, 38)
+              )}
             </div>
             <span className="text-[11px] text-slate-400 mt-2">Launcher Icon</span>
           </div>
@@ -195,6 +204,19 @@ export const BrandingEditor: React.FC<BrandingEditorProps> = ({ config, onChange
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Upload Custom Logo from Device */}
+        <div className="pt-2 border-t border-slate-800">
+          <ImageUploadField
+            label="Upload Custom App Logo / Icon from Device"
+            description="Select an image (PNG, JPG, SVG, WebP) from your phone or PC. Overrides the vector icon with your custom graphic or photo."
+            value={config.appLogo.customImageUrl}
+            onChange={(dataUrl) => updateLogo({ customImageUrl: dataUrl })}
+            onClear={() => updateLogo({ customImageUrl: undefined })}
+            placeholderText="Upload app logo / icon from your device"
+            previewShape="square"
+          />
         </div>
       </div>
 
