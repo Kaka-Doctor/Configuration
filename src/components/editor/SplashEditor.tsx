@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';

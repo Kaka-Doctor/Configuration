@@ -1,24 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { AppConfig } from '../../types/appConfig';
-import { downloadApk, downloadAab } from '../../utils/apkBuilder';
+import type { AppConfig } from '../../types/appConfig';
+import {
+  apkFileName,
+  apkReleaseUrl,
+  downloadAndroidStudioProject,
+  downloadGitHubRepoZip,
+  loadSavedRepo,
+  parseRepoSlug,
+  repoActionsUrl,
+  repoReleasesUrl,
+  saveRepo,
+  studioUrl,
+} from '../../utils/exportService';
 import {
   X,
-  Smartphone,
   Download,
+  Smartphone,
   QrCode,
-  CheckCircle2,
+  Check,
+  Copy,
+  Github,
+  Package,
+  FolderGit2,
+  ShieldCheck,
   AlertTriangle,
   ExternalLink,
-  ShieldCheck,
-  Package,
+  Terminal,
+  Cpu,
   Layers,
-  Sparkles,
-  ArrowRight,
-  Copy,
-  Check,
-  Radio,
-  FileCode,
+  Link2,
 } from 'lucide-react';
 
 interface PhoneTestModalProps {
@@ -27,91 +38,107 @@ interface PhoneTestModalProps {
   onClose: () => void;
 }
 
-export const PhoneTestModal: React.FC<PhoneTestModalProps> = ({ isOpen, config, onClose }) => {
-  const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [isDownloadingApk, setIsDownloadingApk] = useState(false);
-  const [isDownloadingAab, setIsDownloadingAab] = useState(false);
-  const [apkDownloaded, setApkDownloaded] = useState(false);
-  const [activeGuideTab, setActiveGuideTab] = useState<'apk' | 'qr' | 'playstore'>('apk');
-  const [copiedLink, setCopiedLink] = useState(false);
+type Tab = 'apk' | 'studio' | 'pwa';
 
-  // Generate QR code for mobile testing
+export const PhoneTestModal: React.FC<PhoneTestModalProps> = ({ isOpen, config, onClose }) => {
+  const [tab, setTab] = useState<Tab>('apk');
+  const [repoInput, setRepoInput] = useState('');
+  const [repo, setRepo] = useState('');
+  const [repoError, setRepoError] = useState('');
+  const [copied, setCopied] = useState<'git' | null>(null);
+  const [busy, setBusy] = useState<'github' | 'studio' | null>(null);
+  const [qr, setQr] = useState('');
+  const [error, setError] = useState('');
+
   useEffect(() => {
     if (!isOpen) return;
-
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : 'https://localhost:3000';
-    QRCode.toDataURL(currentUrl, {
-      width: 280,
-      margin: 1.5,
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
-    })
-      .then((url) => setQrDataUrl(url))
-      .catch((err) => console.error('QR generation failed:', err));
+    const saved = loadSavedRepo();
+    setRepo(saved);
+    setRepoInput(saved);
+    const url = studioUrl();
+    if (url) {
+      QRCode.toDataURL(url, { width: 260, margin: 1.5, color: { dark: '#0f172a', light: '#ffffff' } })
+        .then(setQr)
+        .catch(() => setQr(''));
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleDownloadApk = async () => {
+  const gitCommands = repo
+    ? [
+        'git init',
+        'git add .',
+        'git commit -m "Initial commit"',
+        'git branch -M main',
+        `git remote add origin https://github.com/${repo}.git`,
+        'git push -u origin main',
+      ].join('\n')
+    : [
+        'git init',
+        'git add .',
+        'git commit -m "Initial commit"',
+        'git branch -M main',
+        'git remote add origin https://github.com/<YOUR-USERNAME>/<YOUR-REPO>.git',
+        'git push -u origin main',
+      ].join('\n');
+
+  const handleRepoChange = (value: string) => {
+    setRepoInput(value);
+    const parsed = parseRepoSlug(value);
+    if (parsed) {
+      setRepo(parsed);
+      saveRepo(parsed);
+      setRepoError('');
+    } else {
+      setRepoError(value.trim() ? 'Use the form owner/repository' : '');
+    }
+  };
+
+  const handleDownload = async (kind: 'github' | 'studio') => {
+    setError('');
+    setBusy(kind);
     try {
-      setIsDownloadingApk(true);
-      await downloadApk(config);
-      setApkDownloaded(true);
-      setTimeout(() => setApkDownloaded(false), 4000);
+      if (kind === 'github') {
+        await downloadGitHubRepoZip(config);
+      } else {
+        await downloadAndroidStudioProject(config);
+      }
     } catch (err) {
-      console.error('Failed to build APK:', err);
-      alert('Error building APK. Please try again.');
+      console.error(err);
+      setError('Could not create the ZIP in this browser. Try again in Chrome or Edge.');
     } finally {
-      setIsDownloadingApk(false);
+      setBusy(null);
     }
   };
 
-  const handleDownloadAab = async () => {
+  const copyGit = async () => {
     try {
-      setIsDownloadingAab(true);
-      await downloadAab(config);
-    } catch (err) {
-      console.error('Failed to build AAB:', err);
-      alert('Error building AAB. Please try again.');
-    } finally {
-      setIsDownloadingAab(false);
+      await navigator.clipboard.writeText(gitCommands);
+      setCopied('git');
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setError('Clipboard access was blocked by the browser.');
     }
   };
-
-  const handleCopyLink = () => {
-    if (typeof window !== 'undefined') {
-      navigator.clipboard?.writeText(window.location.href);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    }
-  };
-
-  const cleanFileName = config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/60">
+        <div className="flex items-start justify-between p-6 border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-emerald-500/20">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/20">
               <Smartphone size={26} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-xl font-bold text-white tracking-tight">Test on Real Android Phone</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Target SDK {config.androidSdk.targetSdk} (Android 16)
-                </span>
-              </div>
+              <h3 className="text-xl font-bold text-white">Build &amp; Test Your App</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Download your signed <span className="text-emerald-400 font-semibold">.apk</span> or scan the QR code to install directly onto your physical phone.
+                Real, installable APK builds are produced by GitHub Actions — a browser cannot compile
+                Android binaries. Everything here creates <strong>working</strong> output.
               </p>
             </div>
           </div>
-
           <button
             onClick={onClose}
             className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition"
@@ -121,335 +148,317 @@ export const PhoneTestModal: React.FC<PhoneTestModalProps> = ({ isOpen, config, 
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Main Download Callouts */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 1. Primary APK Download Card */}
-            <div className="bg-gradient-to-b from-slate-800 to-slate-850 border-2 border-emerald-500/40 hover:border-emerald-500/70 rounded-2xl p-5 shadow-xl relative overflow-hidden flex flex-col justify-between transition-all">
-              <div className="absolute top-0 right-0 px-3 py-1 bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wider rounded-bl-xl shadow-md">
-                Direct Phone Install (.APK)
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Package className="text-emerald-400" size={20} />
-                  <h4 className="font-bold text-white text-base">Android Application Package (.apk)</h4>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed mb-3">
-                  Pre-compiled, signed binary with your custom keystore, target SDK {config.androidSdk.targetSdk}, custom splash screen, icons, and AdMob integration. Ready to side-load directly.
-                </p>
-
-                <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-700/60 mb-4 space-y-1.5 text-[11px]">
-                  <div className="flex justify-between text-slate-400">
-                    <span>File Name:</span>
-                    <span className="font-mono text-emerald-300 font-medium truncate max-w-[180px]">
-                      {cleanFileName}-v{config.versionName}.apk
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Package ID:</span>
-                    <span className="font-mono text-slate-200">{config.appPackageId}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Signing Status:</span>
-                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                      <ShieldCheck size={12} /> Signed ({config.keystore.keyAlias})
-                    </span>
-                  </div>
-                </div>
-              </div>
-
+        {/* Tabs */}
+        <div className="flex items-center gap-1.5 px-6 pt-4">
+          {(
+            [
+              { id: 'apk', label: '1. Real APK (GitHub)', icon: Package },
+              { id: 'studio', label: '2. Android Studio', icon: Cpu },
+              { id: 'pwa', label: '3. Instant phone test', icon: QrCode },
+            ] as const
+          ).map((item) => {
+            const Icon = item.icon;
+            return (
               <button
-                onClick={handleDownloadApk}
-                disabled={isDownloadingApk}
-                className="w-full py-3.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition disabled:opacity-50"
-              >
-                {isDownloadingApk ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                    <span>Compiling & Packaging APK...</span>
-                  </>
-                ) : apkDownloaded ? (
-                  <>
-                    <CheckCircle2 size={18} />
-                    <span>Downloaded! Check Downloads Folder</span>
-                  </>
-                ) : (
-                  <>
-                    <Download size={18} />
-                    <span>Download .APK Now</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* 2. Google Play Bundle (.AAB) Card */}
-            <div className="bg-slate-800/80 border border-slate-700 hover:border-slate-600 rounded-2xl p-5 shadow-lg flex flex-col justify-between transition-all">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Layers className="text-indigo-400" size={20} />
-                  <h4 className="font-bold text-white text-base">Android App Bundle (.aab)</h4>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed mb-3">
-                  Official Google Play publishing format. Required when submitting your app to Google Play Store Console for Target SDK {config.androidSdk.targetSdk} compliance.
-                </p>
-
-                <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-700/60 mb-4 space-y-1.5 text-[11px]">
-                  <div className="flex justify-between text-slate-400">
-                    <span>File Name:</span>
-                    <span className="font-mono text-indigo-300 font-medium truncate max-w-[180px]">
-                      {cleanFileName}-v{config.versionName}-release.aab
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Version Code:</span>
-                    <span className="text-slate-200 font-medium">{config.versionCode}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Target SDK:</span>
-                    <span className="text-indigo-300 font-semibold">{config.androidSdk.targetSdk} (Android 16+)</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleDownloadAab}
-                disabled={isDownloadingAab}
-                className="w-full py-3.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold text-sm flex items-center justify-center gap-2 border border-slate-600 transition disabled:opacity-50"
-              >
-                {isDownloadingAab ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Packaging AAB...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download size={18} />
-                    <span>Download .AAB Bundle</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Testing Guide Tabs */}
-          <div className="bg-slate-850 rounded-2xl border border-slate-800 p-5">
-            <div className="flex items-center gap-2 pb-4 border-b border-slate-800 text-xs font-semibold">
-              <span className="text-slate-400">Testing Methods:</span>
-              <button
-                onClick={() => setActiveGuideTab('apk')}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeGuideTab === 'apk'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                  tab === item.id
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                 }`}
               >
-                1. Side-load APK on Phone
+                <Icon size={14} />
+                <span>{item.label}</span>
               </button>
-              <button
-                onClick={() => setActiveGuideTab('qr')}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeGuideTab === 'qr'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                2. Instant QR Scan (WebAPK)
-              </button>
-              <button
-                onClick={() => setActiveGuideTab('playstore')}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeGuideTab === 'playstore'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                3. Google Play Publish
-              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {error && (
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>{error}</span>
             </div>
+          )}
 
-            {/* Tab 1: Direct Side-load Instructions */}
-            {activeGuideTab === 'apk' && (
-              <div className="pt-4 space-y-4">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-emerald-400" />
-                  How to install the downloaded .APK on your Android Phone:
-                </h5>
+          {/* ------------------------------ APK tab ------------------------------ */}
+          {tab === 'apk' && (
+            <>
+              <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-5 space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <FolderGit2 size={16} className="text-indigo-400" />
+                  Step 1 — Download the repository and push it
+                </h4>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2">
-                      1
-                    </div>
-                    <div className="font-semibold text-slate-200 mb-1">Download APK</div>
-                    <p className="text-slate-400 leading-relaxed text-[11px]">
-                      Click "Download .APK Now" on your phone or send the file via USB, Drive, or WhatsApp.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2">
-                      2
-                    </div>
-                    <div className="font-semibold text-slate-200 mb-1">Open Downloaded File</div>
-                    <p className="text-slate-400 leading-relaxed text-[11px]">
-                      Tap the file in your notification bar or open your phone's <strong>Files</strong> / <strong>Downloads</strong> app.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2">
-                      3
-                    </div>
-                    <div className="font-semibold text-slate-200 mb-1">Allow Unknown Apps</div>
-                    <p className="text-slate-400 leading-relaxed text-[11px]">
-                      If prompted: Tap <strong>Settings</strong> &rarr; Toggle <strong>"Allow from this source"</strong> for Chrome or Files.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2">
-                      4
-                    </div>
-                    <div className="font-semibold text-slate-200 mb-1">Tap Install</div>
-                    <p className="text-slate-400 leading-relaxed text-[11px]">
-                      Tap <strong>Install</strong>. Your customized app with splash screen & topbar will launch right on your phone!
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-slate-400 flex items-center gap-2">
-                    <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-                    Tip: Android 14, 15, and 16 require explicit permission for APK side-loading. This takes 5 seconds!
-                  </span>
-                  <button
-                    onClick={handleDownloadApk}
-                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shrink-0 transition"
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    value={repoInput}
+                    onChange={(event) => handleRepoChange(event.target.value)}
+                    placeholder="your-username/your-repo"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                  <a
+                    href={repo ? repoActionsUrl(repo) : undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition ${
+                      repo
+                        ? 'bg-slate-700 hover:bg-slate-600 text-white border-slate-600'
+                        : 'bg-slate-800 text-slate-500 border-slate-800 pointer-events-none'
+                    }`}
                   >
-                    Download APK
-                  </button>
+                    <ExternalLink size={13} />
+                    <span>Open Actions</span>
+                  </a>
                 </div>
-              </div>
-            )}
+                {repoError && <p className="text-[11px] text-amber-300">{repoError}</p>}
 
-            {/* Tab 2: QR Code Scan (WebAPK Instant Test) */}
-            {activeGuideTab === 'qr' && (
-              <div className="pt-4 flex flex-col md:flex-row items-center gap-6">
-                <div className="bg-white p-3 rounded-2xl shadow-lg shrink-0">
-                  {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Scan QR Code to open on mobile" className="w-48 h-48 rounded-lg" />
+                <button
+                  onClick={() => handleDownload('github')}
+                  disabled={busy === 'github'}
+                  className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold flex items-center justify-center gap-2 transition disabled:opacity-50"
+                >
+                  {busy === 'github' ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Packaging repository…</span>
+                    </>
                   ) : (
-                    <div className="w-48 h-48 flex items-center justify-center text-slate-500 text-xs">
-                      Loading QR...
-                    </div>
+                    <>
+                      <Download size={16} />
+                      <span>Download GitHub repository (.zip)</span>
+                    </>
                   )}
-                </div>
+                </button>
 
-                <div className="space-y-3 flex-1 text-xs">
-                  <div className="flex items-center gap-2">
-                    <QrCode className="text-emerald-400" size={18} />
-                    <h5 className="font-bold text-white text-sm">Scan with your Phone Camera</h5>
-                  </div>
-                  <p className="text-slate-300 leading-relaxed">
-                    Open your Android phone's Camera or Google Lens and point it at the QR code. You will immediately open your created app on your physical device.
-                  </p>
-
-                  <div className="space-y-2 bg-slate-900 p-3 rounded-xl border border-slate-800 text-[11px]">
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <span className="font-bold text-emerald-400">1.</span>
-                      <span>Scan QR code with Android phone camera and tap the opened link in Google Chrome.</span>
-                    </div>
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <span className="font-bold text-emerald-400">2.</span>
-                      <span>Tap Chrome's 3-dot menu (&vellip;) and select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>.</span>
-                    </div>
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <span className="font-bold text-emerald-400">3.</span>
-                      <span>Android generates a native WebAPK icon on your home screen with your custom splash screen!</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                      <Terminal size={12} /> Run inside the unzipped folder
+                    </span>
                     <button
-                      onClick={handleCopyLink}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium flex items-center gap-1.5 transition"
+                      onClick={copyGit}
+                      className="text-[11px] text-indigo-300 hover:text-indigo-200 flex items-center gap-1"
                     >
-                      {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                      <span>{copiedLink ? 'Link Copied!' : 'Copy Mobile Link'}</span>
+                      {copied === 'git' ? <Check size={12} /> : <Copy size={12} />}
+                      {copied === 'git' ? 'Copied' : 'Copy'}
                     </button>
-                    <a
-                      href={typeof window !== 'undefined' ? window.location.href : '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium flex items-center gap-1.5 transition"
-                    >
-                      <ExternalLink size={14} />
-                      <span>Open Preview in New Tab</span>
-                    </a>
                   </div>
+                  <pre className="text-[11px] leading-relaxed text-emerald-300 font-mono whitespace-pre-wrap">
+                    {gitCommands}
+                  </pre>
                 </div>
               </div>
-            )}
 
-            {/* Tab 3: Google Play Store Guide */}
-            {activeGuideTab === 'playstore' && (
-              <div className="pt-4 space-y-3 text-xs">
-                <h5 className="font-bold text-white text-sm">Publishing to Google Play Console:</h5>
-                <p className="text-slate-300 leading-relaxed text-[11px]">
-                  Google Play requires apps targeting API level 36+ to be uploaded in the <strong>.AAB (Android App Bundle)</strong> format and signed with your release keystore.
+              <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-5 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  Step 2 — GitHub builds an installable APK for you
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  The repository already contains{' '}
+                  <code className="text-indigo-300">.github/workflows/build-apk.yml</code>. After you
+                  push, GitHub installs JDK {config.androidSdk.jdkVersion || '17'} + the Android SDK and runs{' '}
+                  <code className="text-indigo-300">assembleDebug</code> /{' '}
+                  <code className="text-indigo-300">bundleRelease</code>, then publishes:
+                </p>
+                <ul className="text-xs text-slate-300 space-y-1.5 pl-4 list-disc">
+                  <li>
+                    <code className="text-emerald-300">{apkFileName(config)}</code> — install directly on
+                    your phone
+                  </li>
+                  <li>
+                    The matching <code className="text-indigo-300">.aab</code> for Google Play
+                  </li>
+                </ul>
+                <p className="text-[11px] text-slate-400">
+                  The APK is signed with the debug key (installable everywhere). Add the four signing
+                  secrets to sign the AAB and release builds with your own upload key.
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
-                    <div className="font-bold text-indigo-400">1. Download .AAB</div>
-                    <p className="text-slate-400 text-[11px]">
-                      Click "Download .AAB Bundle" above to get your release bundle.
-                    </p>
-                  </div>
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
-                    <div className="font-bold text-indigo-400">2. Download Keystore</div>
-                    <p className="text-slate-400 text-[11px]">
-                      Keep your <code className="text-purple-300 font-mono">{config.keystore.fileName}</code> safe for future updates.
-                    </p>
-                  </div>
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
-                    <div className="font-bold text-indigo-400">3. Upload to Console</div>
-                    <p className="text-slate-400 text-[11px]">
-                      Go to play.google.com/console &rarr; Create Release &rarr; Drop your .aab file.
-                    </p>
-                  </div>
+                <a
+                  href={repo ? apkReleaseUrl(repo, config) : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition ${
+                    repo
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20'
+                      : 'bg-slate-800 text-slate-500 pointer-events-none'
+                  }`}
+                >
+                  <Download size={17} />
+                  <span>Download the built .APK</span>
+                </a>
+                {repo ? (
+                  <p className="text-[11px] text-slate-400 text-center break-all">
+                    {apkReleaseUrl(repo, config)}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-amber-300 text-center">
+                    Enter your GitHub repository above to enable the APK link.
+                  </p>
+                )}
+                <p className="text-[11px] text-slate-500 text-center">
+                  The first build takes ~3–5 minutes. The link starts working once the release exists.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ---------------------------- Studio tab ---------------------------- */}
+          {tab === 'studio' && (
+            <>
+              <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-5 space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Cpu size={16} className="text-indigo-400" />
+                  Complete Android Studio project
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Contains a real Gradle project: <code className="text-indigo-300">settings.gradle</code>,{' '}
+                  AGP/Kotlin plugin versions, <code className="text-indigo-300">MainActivity.kt</code>, theme,
+                  layout, network config, offline web assets and <strong>PNG launcher icons generated from
+                  your uploaded logo</strong>.
+                </p>
+
+                <button
+                  onClick={() => handleDownload('studio')}
+                  disabled={busy === 'studio'}
+                  className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold flex items-center justify-center gap-2 transition disabled:opacity-50"
+                >
+                  {busy === 'studio' ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Rendering icons &amp; packaging…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download size={16} />
+                      <span>Download Android Studio project (.zip)</span>
+                    </>
+                  )}
+                </button>
+
+                <ol className="text-xs text-slate-300 space-y-2 pl-4 list-decimal">
+                  <li>Unzip the archive.</li>
+                  <li>Android Studio → <strong>File → Open…</strong> → choose the folder.</li>
+                  <li>Wait for Gradle sync (it downloads Gradle 8.11.1 automatically).</li>
+                  <li>Press <strong>Run ▶</strong> to install on your phone, or use <strong>Build → Generate Signed Bundle / APK</strong>.</li>
+                </ol>
+
+                <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-2">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>
+                    A browser cannot create a valid signing key. If you did not upload a keystore, the project
+                    builds with the debug key (installable), and <code>SIGNING.txt</code> shows the exact
+                    keytool command + GitHub secrets for a Play-ready release.
+                  </span>
                 </div>
               </div>
-            )}
-          </div>
+            </>
+          )}
+
+          {/* ------------------------------ PWA tab ------------------------------ */}
+          {tab === 'pwa' && (
+            <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-start">
+              <div className="bg-white p-3 rounded-2xl shadow-lg mx-auto">
+                {qr ? (
+                  <img src={qr} alt="QR code for this studio" className="w-48 h-48 rounded-lg" />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-slate-500 text-xs">
+                    Generating QR…
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3 text-xs">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <QrCode size={16} className="text-emerald-400" />
+                  Open the studio on your phone right now
+                </h4>
+                <p className="text-slate-300 leading-relaxed">
+                  Scan with the Android camera. Because this studio ships a valid{' '}
+                  <code className="text-indigo-300">manifest.webmanifest</code> and icons on Netlify, Chrome
+                  offers <strong>Install app</strong> — no APK needed for quick testing.
+                </p>
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-300 space-y-2">
+                  <p className="flex items-start gap-2">
+                    <span className="font-bold text-emerald-400">1.</span>
+                    <span>Scan the QR code and open the link in Chrome.</span>
+                  </p>
+                  <p className="flex items-start gap-2">
+                    <span className="font-bold text-emerald-400">2.</span>
+                    <span>Chrome menu (⋮) → <strong>Add to Home screen</strong> / <strong>Install app</strong>.</span>
+                  </p>
+                  <p className="flex items-start gap-2">
+                    <span className="font-bold text-emerald-400">3.</span>
+                    <span>Your design opens full-screen, like a native app.</span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <a
+                    href={studioUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium flex items-center gap-1.5 transition"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Open in new tab</span>
+                  </a>
+                  <span className="text-[11px] text-slate-500 break-all">{studioUrl()}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-[11px] text-indigo-200 flex items-start gap-2">
+                  <Layers size={14} className="shrink-0 mt-0.5" />
+                  <span>
+                    This installs the <strong>studio</strong> as a PWA. To install the app you designed, export
+                    the repo and host its root <code>index.html</code> (GitHub Pages / Netlify) — that folder is
+                    included in the download.
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div className="p-4 px-6 border-t border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck size={16} className="text-emerald-400" />
+            <ShieldCheck size={15} className="text-emerald-400" />
             <span>
-              Target SDK <strong>{config.androidSdk.targetSdk}</strong> &bull; Package: <code className="text-slate-300">{config.appPackageId}</code> &bull; v{config.versionName}
+              {config.appName} · v{config.versionName} · target SDK {config.androidSdk.targetSdk}
             </span>
           </div>
-
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            {repo && (
+              <a
+                href={repoReleasesUrl(repo)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700"
+              >
+                <Github size={13} />
+                Releases
+              </a>
+            )}
             <button
               onClick={onClose}
               className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
             >
               Close
             </button>
-            <button
-              onClick={handleDownloadApk}
-              disabled={isDownloadingApk}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition disabled:opacity-50"
+            <a
+              href={repo ? apkReleaseUrl(repo, config) : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                repo
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                  : 'bg-slate-800 text-slate-500 pointer-events-none'
+              }`}
             >
-              <Download size={14} />
-              <span>Download .APK ({cleanFileName}.apk)</span>
-            </button>
+              <Link2 size={13} />
+              <span>Get .APK</span>
+            </a>
           </div>
         </div>
       </div>

@@ -1,0 +1,36 @@
+# Netlify configuration — makes the studio deploy directly from your Git repo.
+# Netlify runs `npm install` then `npm run build`; the static site is served from `dist`.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single Page Application fallback so the studio keeps working on any URL,
+# including deep links like /?tab=sdk and browser refreshes.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The studio is a pure static client-side app; no server functions are required.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

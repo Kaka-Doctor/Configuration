@@ -2,11 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Android PWA Studio & App Creator</title>
-    <meta name="description" content="Visual studio to design, preview, and build custom Android PWAs with splash screens, custom logos, dynamic menus, launchpad icons, and ready-to-host GitHub repository exports." />
+    <meta
+      name="description"
+      content="Visual studio to design, preview, and build custom Android PWAs with splash screens, custom logos, dynamic menus, launchpad icons, a real Android Studio project export, and GitHub Actions APK/AAB builds."
+    />
     <meta property="og:title" content="Android PWA Studio & App Creator" />
-    <meta property="og:description" content="Visual studio to design, preview, and build custom Android PWAs with splash screens, custom logos, dynamic menus, launchpad icons, and ready-to-host GitHub repository exports." />
+    <meta
+      property="og:description"
+      content="Design your Android app, upload your own logo/splash images, export a compilable Android Studio project, and build a real, installable APK and Play-ready AAB with GitHub Actions."
+    />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#1e1b4b" />
@@ -14,10 +20,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="AppCraft" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

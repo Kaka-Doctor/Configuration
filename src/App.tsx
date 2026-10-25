@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppConfig } from './types/appConfig';
+import type { AppConfig } from './types/appConfig';
 import { DEFAULT_APP_CONFIG, PRESET_TEMPLATES } from './utils/presets';
 import { DeviceSimulator } from './components/DeviceSimulator';
 import { BrandingEditor } from './components/editor/BrandingEditor';
@@ -13,6 +13,7 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { AndroidSdkEditor } from './components/editor/AndroidSdkEditor';
 import { AdMobEditor } from './components/editor/AdMobEditor';
 import { KeystoreEditor } from './components/editor/KeystoreEditor';
+import { PhoneTestModal } from './components/editor/PhoneTestModal';
 import {
   Smartphone,
   Sparkles,
@@ -68,16 +69,23 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<StudioTab>('branding');
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isPhoneTestOpen, setIsPhoneTestOpen] = useState(false);
   const [saveBanner, setSaveBanner] = useState(false);
+  const [storageWarning, setStorageWarning] = useState('');
 
   // Save changes to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('appcraft_config_v1', JSON.stringify(config));
+      setStorageWarning('');
       setSaveBanner(true);
       const timer = setTimeout(() => setSaveBanner(false), 1500);
       return () => clearTimeout(timer);
-    } catch {}
+    } catch {
+      setStorageWarning(
+        'Browser storage is full, so your latest changes are NOT being saved. Remove a large uploaded image or export your project now.'
+      );
+    }
   }, [config]);
 
   const handleResetToDefault = () => {
@@ -120,19 +128,38 @@ export default function App() {
             <span className="sm:hidden">Templates</span>
           </button>
 
+          {/* Build & Test (real APK route) */}
+          <button
+            onClick={() => setIsPhoneTestOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-500/20 transition"
+          >
+            <Download size={15} />
+            <span className="hidden sm:inline">Build &amp; Test App</span>
+            <span className="sm:hidden">Build</span>
+          </button>
+
           {/* GitHub & Export Center */}
           <button
             onClick={() => setIsExportOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition"
           >
             <FolderGit2 size={15} />
-            <span>GitHub & Export</span>
+            <span className="hidden sm:inline">GitHub &amp; Export</span>
+            <span className="sm:hidden">Export</span>
           </button>
 
           {/* PWA Install Button */}
           <PWAInstallButton />
         </div>
       </header>
+
+      {/* Storage warning — shown only when the browser refuses to persist changes */}
+      {storageWarning && (
+        <div className="bg-rose-950/60 border-b border-rose-500/40 px-4 py-2 text-center text-[11px] text-rose-200 flex items-center justify-center gap-2">
+          <HelpCircle size={13} className="shrink-0" />
+          <span>{storageWarning}</span>
+        </div>
+      )}
 
       {/* Main Studio Body */}
       <main className="flex-1 flex flex-col lg:flex-row max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 gap-8 items-start">
@@ -258,14 +285,20 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-300">AppCraft Android PWA Studio</span>
             <span>—</span>
-            <span>Ready for GitHub Pages, Google Play Store (TWA), and Capacitor APK</span>
+            <span>Real APK/AAB builds via GitHub Actions · compilable Android Studio export · installable PWA</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
+            <button
+              onClick={() => setIsPhoneTestOpen(true)}
+              className="hover:text-emerald-300 transition"
+            >
+              Build &amp; Test
+            </button>
             <button
               onClick={() => setIsTemplatesOpen(true)}
               className="hover:text-slate-200 transition"
             >
-              Browse 4 Preset Designs
+              Browse Preset Designs
             </button>
             <button
               onClick={() => setIsExportOpen(true)}
@@ -289,6 +322,16 @@ export default function App() {
         isOpen={isExportOpen}
         config={config}
         onClose={() => setIsExportOpen(false)}
+        onOpenBuild={() => {
+          setIsExportOpen(false);
+          setIsPhoneTestOpen(true);
+        }}
+      />
+
+      <PhoneTestModal
+        isOpen={isPhoneTestOpen}
+        config={config}
+        onClose={() => setIsPhoneTestOpen(false)}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppConfig, LaunchpadIconItem } from '../../types/appConfig';
+import type { AppConfig, LaunchpadIconItem } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';
@@ -400,6 +400,7 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                             onClear={() => updateIconItem(iconItem.id, { customImageUrl: undefined })}
                             placeholderText="Upload card image from device"
                             previewShape="square"
+                            maxDimension={512}
                           />
                         </div>
 

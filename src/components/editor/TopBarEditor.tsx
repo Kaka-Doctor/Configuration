@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { ImageUploadField } from '../common/ImageUploadField';
 import { Share2, LayoutTemplate, Palette, Sparkles, Sliders } from 'lucide-react';
 

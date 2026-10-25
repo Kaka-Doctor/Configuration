@@ -1,4 +1,4 @@
-import { AppConfig } from '../types/appConfig';
+import type { AppConfig } from '../types/appConfig';
 import { DEFAULT_KEYSTORE_CONFIG } from './keystoreGenerator';
 
 export const DEFAULT_ANDROID_SDK: AppConfig['androidSdk'] = {

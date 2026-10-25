@@ -1,6 +1,73 @@
-import { AppConfig } from '../types/appConfig';
-import JSZip from 'jszip';
-import { createKeystoreBlob, generateSigningGradleProperties } from './keystoreGenerator';
+import type { AppConfig } from '../types/appConfig';
+import type JSZip from 'jszip';
+import { createKeystoreBlob, safeKeystoreFileName } from './keystoreGenerator';
+import {
+  AGP_VERSION,
+  GRADLE_VERSION,
+  KOTLIN_VERSION,
+  appSlug,
+  generateActivityLayout,
+  generateAndroidManifestXml,
+  generateAppBuildGradle,
+  generateAppBuildGradle as generateBuildGradle,
+  generateColorsXml,
+  generateGitHubActionsWorkflow,
+  generateGitignore,
+  generateGradleProperties,
+  generateKeystoreReadme,
+  generateLocalProperties,
+  generateMainActivityKt,
+  generateNetworkSecurityConfig,
+  generateProguardRules,
+  generateProjectReadme,
+  generateProjectReadme as generateReadmeMd,
+  generateRootBuildGradle,
+  generateSettingsGradle,
+  generateStringsXml,
+  generateThemesV31Xml,
+  generateThemesXml,
+  generateWrapperProperties,
+} from './androidProject';
+import { buildAndroidIconAssets, buildPwaIconAssets } from './iconRenderer';
+
+/** Keeps line endings correct when the project is pushed from Windows/macOS. */
+const GITATTRIBUTES = `* text=auto
+*.gradle text eol=lf
+*.kt text eol=lf
+*.xml text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.png binary
+*.keystore binary
+`;
+
+export {
+  AGP_VERSION,
+  GRADLE_VERSION,
+  KOTLIN_VERSION,
+  appSlug,
+  generateActivityLayout,
+  generateAndroidManifestXml,
+  generateAppBuildGradle,
+  generateAppBuildGradle as generateBuildGradle,
+  generateColorsXml,
+  generateGitHubActionsWorkflow,
+  generateGitignore,
+  generateGradleProperties,
+  generateKeystoreReadme,
+  generateMainActivityKt,
+  generateNetworkSecurityConfig,
+  generateProguardRules,
+  generateProjectReadme,
+  generateProjectReadme as generateReadmeMd,
+  generateRootBuildGradle,
+  generateSettingsGradle,
+  generateStringsXml,
+  generateThemesV31Xml,
+  generateThemesXml,
+  generateWrapperProperties,
+} from './androidProject';
 
 /**
  * Generates the Web App Manifest object for PWA / Android installation.
@@ -133,344 +200,6 @@ export function generateCapacitorConfig(config: AppConfig): string {
   );
 }
 
-/**
- * Generates app/build.gradle with targetSdk, minSdk, compileSdk, versionCode, versionName, and AdMob dependencies.
- */
-export function generateBuildGradle(config: AppConfig): string {
-  const sdk = config.androidSdk || {
-    compileSdk: 36,
-    targetSdk: 36,
-    minSdk: 24,
-    jdkVersion: '17',
-    gradleVersion: '8.7',
-    enableProGuard: true,
-  };
-  return `plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
-
-android {
-    namespace '${config.appPackageId}'
-    compileSdk ${sdk.compileSdk}
-
-    defaultConfig {
-        applicationId "${config.appPackageId}"
-        minSdk ${sdk.minSdk}
-        targetSdk ${sdk.targetSdk}
-        versionCode ${config.versionCode || 1}
-        versionName "${config.versionName || '1.0.0'}"
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary true
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled ${sdk.enableProGuard}
-            shrinkResources ${sdk.enableProGuard}
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_${sdk.jdkVersion || '17'}
-        targetCompatibility JavaVersion.VERSION_${sdk.jdkVersion || '17'}
-    }
-
-    kotlinOptions {
-        jvmTarget = '${sdk.jdkVersion || '17'}'
-    }
-
-    buildFeatures {
-        viewBinding true
-    }
-}
-
-dependencies {
-    implementation 'androidx.core:core-ktx:1.15.0'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.webkit:webkit:1.12.1'
-    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-
-    ${config.admob?.enabled ? `// Google Mobile Ads SDK (AdMob)\n    implementation 'com.google.android.gms:play-services-ads:23.6.0'` : '// AdMob disabled'}
-}
-`;
-}
-
-/**
- * Generates AndroidManifest.xml with permissions and AdMob meta-data.
- */
-export function generateAndroidManifestXml(config: AppConfig): string {
-  const p = config.androidSdk?.permissions || {
-    internet: true,
-    networkState: true,
-    camera: false,
-    storage: false,
-    notifications: true,
-    wakeLock: false,
-  };
-  return `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="${config.appPackageId}">
-
-    ${p.internet ? '<uses-permission android:name="android.permission.INTERNET" />' : ''}
-    ${p.networkState ? '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' : ''}
-    ${p.camera ? '<uses-permission android:name="android.permission.CAMERA" />' : ''}
-    ${p.storage ? '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' : ''}
-    ${p.notifications ? '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' : ''}
-    ${p.wakeLock ? '<uses-permission android:name="android.permission.WAKE_LOCK" />' : ''}
-
-    <application
-        android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:label="${config.appName}"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.App.NoActionBar"
-        android:usesCleartextTraffic="true">
-
-        ${config.admob?.enabled ? `<!-- Google AdMob App ID -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="${config.admob.appId || 'ca-app-pub-3940256099942544~3347511713'}" />` : ''}
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:screenOrientation="${config.pwaSettings.orientation === 'portrait' ? 'portrait' : config.pwaSettings.orientation === 'landscape' ? 'landscape' : 'unspecified'}">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-`;
-}
-
-/**
- * Generates MainActivity.kt with WebView integration and AdMob Banner + Interstitial logic.
- */
-export function generateMainActivityKt(config: AppConfig): string {
-  const packagePath = config.appPackageId || 'com.example.app';
-  return `package ${packagePath}
-
-import android.os.Bundle
-import android.view.View
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.appcompat.app.AppCompatActivity
-${config.admob?.enabled ? `import com.google.android.gms.ads.AdRequest
-import com.google.android.gms.ads.AdView
-import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.interstitial.InterstitialAd
-import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback` : ''}
-
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var webView: WebView
-    ${config.admob?.enabled ? `private var mInterstitialAd: InterstitialAd? = null
-    private lateinit var adView: AdView` : ''}
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        webView = findViewById(R.id.webView)
-        setupWebView()
-
-        ${config.admob?.enabled ? `// Initialize Google Mobile Ads SDK (AdMob)
-        MobileAds.initialize(this) {}
-
-        // Load Banner Ad
-        setupAdMobBanner()
-
-        // Preload Interstitial Ad
-        loadInterstitialAd()` : ''}
-    }
-
-    private fun setupWebView() {
-        val settings = webView.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.allowFileAccess = true
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                view?.loadUrl(url ?: return false)
-                return true
-            }
-        }
-
-        webView.webChromeClient = WebChromeClient()
-
-        // Load configured entry point
-        ${config.contentMode === 'website' ? `webView.loadUrl("${config.websiteConfig.url}")` : `webView.loadUrl("file:///android_asset/index.html")`}
-    }
-
-    ${config.admob?.enabled ? `private fun setupAdMobBanner() {
-        adView = findViewById(R.id.adView)
-        val adRequest = AdRequest.Builder().build()
-        adView.loadAd(adRequest)
-    }
-
-    private fun loadInterstitialAd() {
-        val adRequest = AdRequest.Builder().build()
-        InterstitialAd.load(
-            this,
-            "${config.admob.interstitialUnitId || 'ca-app-pub-3940256099942544/1033173712'}",
-            adRequest,
-            object : InterstitialAdLoadCallback() {
-                override fun onAdLoaded(interstitialAd: InterstitialAd) {
-                    mInterstitialAd = interstitialAd
-                }
-            }
-        )
-    }` : ''}
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
-    }
-}
-`;
-}
-
-/**
- * Generates automated GitHub Actions workflow to build APK and AAB in the cloud for free.
- */
-export function generateGitHubActionsWorkflow(config: AppConfig): string {
-  return `name: Build Android APK and AAB
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Set up JDK ${config.androidSdk?.jdkVersion || '17'}
-      uses: actions/setup-java@v4
-      with:
-        java-version: '${config.androidSdk?.jdkVersion || '17'}'
-        distribution: 'temurin'
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Grant Execute Permission for Gradlew
-      run: chmod +x gradlew || echo "Using system gradle"
-
-    - name: Build Universal Debug APK
-      run: ./gradlew assembleDebug || gradle assembleDebug
-
-    - name: Build Android App Bundle (.AAB for Google Play)
-      run: ./gradlew bundleRelease || gradle bundleRelease
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${config.shortName}-app-debug.apk
-        path: app/build/outputs/apk/debug/*.apk
-
-    - name: Upload AAB Bundle Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${config.shortName}-release.aab
-        path: app/build/outputs/bundle/release/*.aab
-`;
-}
-
-/**
- * Generates README.md explaining how to push to GitHub, host on GitHub Pages, compile APK/AAB, and AdMob setup.
- */
-export function generateReadmeMd(config: AppConfig): string {
-  return `# ${config.appName} (Android & PWA)
-
-This repository contains the complete, production-ready source code for **${config.appName}**, designed as a Progressive Web App (PWA) with native Android installation support.
-
-## 📱 Android Build & Version Specifications
-- **Package ID**: \`${config.appPackageId}\`
-- **Version Code**: \`${config.versionCode || 1}\`
-- **Version Name**: \`${config.versionName || '1.0.0'}\`
-- **Target SDK**: \`${config.androidSdk?.targetSdk || 36}\` (Android ${(config.androidSdk?.targetSdk || 36) >= 36 ? '16+ / Next-Gen Standard' : '15'})
-- **Compile SDK**: \`${config.androidSdk?.compileSdk || 36}\`
-- **Minimum SDK**: \`${config.androidSdk?.minSdk || 24}\` (Android 7.0 - 99.5%+ global device reach)
-- **JDK Target**: Java ${config.androidSdk?.jdkVersion || '17'} LTS
-- **ProGuard / R8 Optimization**: ${config.androidSdk?.enableProGuard ? 'Enabled' : 'Disabled'}
-
-${config.admob?.enabled ? `## 💰 Google AdMob Monetization Configured
-- **App ID**: \`${config.admob.appId}\`
-- **Banner Ad Unit**: \`${config.admob.bannerUnitId}\`
-- **Interstitial Ad Unit**: \`${config.admob.interstitialUnitId}\`
-- **App Open Ad Unit**: \`${config.admob.appOpenUnitId}\`
-- **Rewarded Ad Unit**: \`${config.admob.rewardedUnitId}\`
-- **Native Ad Unit**: \`${config.admob.nativeUnitId}\`
-- **Test Ads Mode**: ${config.admob.isTestingMode ? 'ENABLED (Safe for testing)' : 'PRODUCTION'}` : ''}
-
----
-
-## ⚡ Automated Cloud APK & AAB Generation (GitHub Actions)
-This repository includes a pre-configured GitHub Actions workflow in \`.github/workflows/build-apk.yml\`.
-Whenever you push your code to GitHub:
-1. GitHub automatically boots an Ubuntu runner with JDK ${config.androidSdk?.jdkVersion || '17'} and Android SDK.
-2. It compiles the **universal debug APK** (\`.apk\`) for direct phone installation.
-3. It compiles the **Android App Bundle** (\`.aab\`) ready for Google Play Store upload.
-4. You can download the completed files directly from the **Actions** tab in your GitHub repository!
-
----
-
-## 🚀 How to Host on GitHub Pages (Instant Free Web Hosting)
-
-1. Go to [https://github.com/new](https://github.com/new) and create a repository named: \`${config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`.
-2. Push your code:
-\`\`\`bash
-git init
-git add .
-git commit -m "Initial commit for ${config.appName} Android PWA"
-git branch -M main
-git remote add origin https://github.com/<YOUR-GITHUB-USERNAME>/${config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-')}.git
-git push -u origin main
-\`\`\`
-3. Go to **Settings > Pages**, choose **Deploy from a branch (main / root)**, and click **Save**.
-4. Live URL: \`https://<YOUR-GITHUB-USERNAME>.github.io/${config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-')}/\`
-
----
-
-## 📂 File Structure
-\`\`\`
-├── .github/workflows/build-apk.yml # Automated Cloud APK/AAB Builder
-├── app/build.gradle                 # Android SDK, compileSdk 35, targetSdk 35
-├── app/src/main/AndroidManifest.xml # Permissions, AdMob App ID, Activities
-├── app/src/main/java/...            # Native Kotlin MainActivity with AdMob
-├── index.html                       # Standalone application with full UI
-├── manifest.webmanifest             # PWA manifest & Android metadata
-├── sw.js                            # Offline service worker caching
-├── capacitor.config.json            # Android Capacitor wrapper configuration
-└── README.md                        # Documentation & setup guide
-\`\`\`
-
-Created with **AppCraft Android Studio**.
-`;
-}
 
 /**
  * Generates the standalone index.html for the created Android PWA.
@@ -479,8 +208,12 @@ export function generateAppHtml(config: AppConfig): string {
   const manifestJsonString = JSON.stringify(generateManifestJson(config), null, 2);
 
   // Serialize icon data for the standalone app
-  const iconsData = JSON.stringify(config.launchpadConfig.icons || []);
-  const menuItemsData = JSON.stringify(config.navigation.items || []);
+  const iconsData = jsonForScript(config.launchpadConfig.icons || []);
+  const menuItemsData = jsonForScript(config.navigation.items || []);
+  // The splash shows its own uploaded image, or falls back to the app logo.
+  const splashImage = config.splashScreen.customImageUrl || config.appLogo.customImageUrl || '';
+  const drawerAvatar = config.navigation.drawerHeader.customAvatarUrl || '';
+  const drawerBanner = config.navigation.drawerHeader.customBannerUrl || '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -765,6 +498,18 @@ export function generateAppHtml(config: AppConfig): string {
       font-size: 20px;
       margin-bottom: 12px;
     }
+    .drawer-user-avatar-img {
+      object-fit: cover;
+      padding: 0;
+      background: rgba(255,255,255,0.35);
+    }
+    .drawer-item-image {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      object-fit: cover;
+      display: block;
+    }
     .drawer-title {
       font-size: 18px;
       font-weight: 700;
@@ -882,9 +627,9 @@ export function generateAppHtml(config: AppConfig): string {
   <!-- Splash Screen -->
   ${config.splashScreen.enabled ? `
   <div id="splash-screen">
-    <div class="splash-logo" style="${config.splashScreen.customImageUrl ? 'padding:6px;overflow:hidden;background:rgba(255,255,255,0.2);' : ''}">
-      ${config.splashScreen.customImageUrl ? `
-      <img src="${config.splashScreen.customImageUrl}" alt="Splash Logo" style="width:100%;height:100%;object-fit:contain;border-radius:18px;" />
+    <div class="splash-logo" style="${splashImage ? 'padding:6px;overflow:hidden;background:rgba(255,255,255,0.2);' : ''}">
+      ${splashImage ? `
+      <img src="${escapeHtml(splashImage)}" alt="Splash Logo" style="width:100%;height:100%;object-fit:contain;border-radius:18px;" />
       ` : `
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect width="18" height="18" x="3" y="3" rx="4" />
@@ -945,7 +690,7 @@ export function generateAppHtml(config: AppConfig): string {
   <main class="app-viewport">
     ${config.contentMode === 'website' ? `
     <div class="webview-wrapper">
-      <iframe class="webview-frame" src="${escapeHtml(config.websiteConfig.url)}" title="Web Content" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+      <iframe class="webview-frame" src="${escapeHtml((config.websiteConfig?.url || '').trim() || 'about:blank')}" title="Web Content" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
     </div>
     ` : `
     <div class="launchpad-container">
@@ -963,8 +708,18 @@ export function generateAppHtml(config: AppConfig): string {
   <!-- Navigation Drawer (if drawer navigation is selected) -->
   <div class="drawer-overlay" id="drawer-overlay"></div>
   <aside class="drawer-panel" id="drawer-panel">
-    <div class="drawer-header">
-      ${config.navigation.drawerHeader.showUserAvatar ? `<div class="drawer-user-avatar">A</div>` : ''}
+    <div class="drawer-header"${
+      drawerBanner
+        ? ` style="background-image:linear-gradient(rgba(0,0,0,0.35),rgba(0,0,0,0.35)),url(&quot;${escapeHtml(drawerBanner)}&quot;);background-size:cover;background-position:center;"`
+        : ''
+    }>
+      ${
+        config.navigation.drawerHeader.showUserAvatar
+          ? drawerAvatar
+            ? `<img class="drawer-user-avatar drawer-user-avatar-img" src="${escapeHtml(drawerAvatar)}" alt="Profile" />`
+            : `<div class="drawer-user-avatar">A</div>`
+          : ''
+      }
       <div class="drawer-title">${escapeHtml(config.navigation.drawerHeader.title)}</div>
       <div class="drawer-subtitle">${escapeHtml(config.navigation.drawerHeader.subtitle)}</div>
     </div>
@@ -992,7 +747,7 @@ export function generateAppHtml(config: AppConfig): string {
 
   <script>
     const APP_CONFIG = {
-      name: ${JSON.stringify(config.appName)},
+      name: ${jsonForScript(config.appName)},
       splashDuration: ${Math.round(config.splashScreen.durationSeconds * 1000)},
       launchpadIcons: ${iconsData},
       menuItems: ${menuItemsData}
@@ -1071,6 +826,7 @@ export function generateAppHtml(config: AppConfig): string {
         el.className = 'drawer-item';
         el.innerHTML = \`
           <div class="drawer-item-left">
+            \${item.customImageUrl ? \`<img class="drawer-item-image" src="\${escapeHtml(item.customImageUrl)}" alt="" />\` : ''}
             <span>\${escapeHtml(item.label)}</span>
           </div>
           \${item.badge ? \`<span class="item-badge">\${escapeHtml(item.badge)}</span>\` : ''}
@@ -1155,8 +911,9 @@ export function generateAppHtml(config: AppConfig): string {
       });
     }
 
-    // Register Service Worker
-    if ('serviceWorker' in navigator) {
+    // Register Service Worker (only over http/https — file:// in a WebView
+    // cannot register one, and this page also ships inside the APK).
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch(err => {
           console.log('SW registration note:', err);
@@ -1183,351 +940,187 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * Creates an exportable ZIP containing all GitHub repository files, keystore, and native Android code.
+ * JSON that is safe to embed inside a <script> block.
+ * Prevents user HTML content (e.g. a `</script>` in a menu page) from breaking
+ * out of the script tag.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value ?? null)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+export interface ProjectFile {
+  path: string;
+  content: string | Blob | Uint8Array;
+}
+
+export interface ProjectBuildOptions {
+  /**
+   * Android Studio exports are private, local projects, so they may embed the
+   * user's keystore and signing properties. GitHub exports must not, because
+   * that repository is pushed to a remote.
+   */
+  includeSigning?: boolean;
+}
+
+/**
+ * Builds the complete, compilable native Android project.
+ * Both the GitHub export and the Android Studio export use this exact file set,
+ * so the two can never drift apart again.
+ */
+export async function buildAndroidProjectFiles(
+  config: AppConfig,
+  options: ProjectBuildOptions = {}
+): Promise<ProjectFile[]> {
+  const includeSigning = options.includeSigning !== false;
+  const packagePath = (config.appPackageId || 'com.example.app').replace(/\./g, '/');
+
+  // Loaded on demand so the studio's initial bundle stays small.
+  const {
+    GRADLE_WRAPPER_JAR_BASE64,
+    GRADLEW_BAT_BASE64,
+    GRADLEW_SH_BASE64,
+    base64ToBytes,
+    base64ToText,
+  } = await import('./gradleWrapperData');
+
+  const files: ProjectFile[] = [
+    { path: 'settings.gradle', content: generateSettingsGradle(config) },
+    { path: 'build.gradle', content: generateRootBuildGradle() },
+    { path: 'gradle.properties', content: generateGradleProperties(config, includeSigning) },
+    { path: 'gradlew', content: base64ToText(GRADLEW_SH_BASE64) },
+    { path: 'gradlew.bat', content: base64ToText(GRADLEW_BAT_BASE64) },
+    { path: 'gradle/wrapper/gradle-wrapper.properties', content: generateWrapperProperties() },
+    { path: 'gradle/wrapper/gradle-wrapper.jar', content: base64ToBytes(GRADLE_WRAPPER_JAR_BASE64) },
+    { path: '.gitattributes', content: GITATTRIBUTES },
+    { path: 'local.properties', content: generateLocalProperties() },
+    { path: 'app/build.gradle', content: generateAppBuildGradle(config) },
+    { path: 'app/proguard-rules.pro', content: generateProguardRules(config) },
+    { path: 'app/src/main/AndroidManifest.xml', content: generateAndroidManifestXml(config) },
+    { path: `app/src/main/java/${packagePath}/MainActivity.kt`, content: generateMainActivityKt(config) },
+    { path: 'app/src/main/res/layout/activity_main.xml', content: generateActivityLayout(config) },
+    { path: 'app/src/main/res/values/strings.xml', content: generateStringsXml(config) },
+    { path: 'app/src/main/res/values/colors.xml', content: generateColorsXml(config) },
+    { path: 'app/src/main/res/values/themes.xml', content: generateThemesXml() },
+    { path: 'app/src/main/res/values-v31/themes.xml', content: generateThemesV31Xml() },
+    { path: 'app/src/main/res/xml/network_security_config.xml', content: generateNetworkSecurityConfig() },
+    { path: 'app/src/main/assets/index.html', content: generateAppHtml(config) },
+    {
+      path: 'app/src/main/assets/manifest.webmanifest',
+      content: JSON.stringify(generateManifestJson(config), null, 2),
+    },
+    { path: 'app/src/main/assets/sw.js', content: generateServiceWorkerJs(config) },
+    {
+      path: 'app/src/main/assets/app-config.json',
+      content: JSON.stringify(
+        {
+          appName: config.appName,
+          shortName: config.shortName,
+          packageId: config.appPackageId,
+          versionCode: config.versionCode,
+          versionName: config.versionName,
+          targetSdk: config.androidSdk.targetSdk,
+          compileSdk: config.androidSdk.compileSdk,
+          contentMode: config.contentMode,
+          adMobEnabled: Boolean(config.admob?.enabled),
+        },
+        null,
+        2
+      ),
+    },
+  ];
+
+  // Real PNG launcher icons rendered from the uploaded logo / brand colours.
+  const iconAssets = await buildAndroidIconAssets(config);
+  files.push(...iconAssets.map((asset) => ({ path: asset.path, content: asset.blob })));
+
+  // Only include a keystore that the user actually supplied (never a fake one),
+  // and only in the private Android Studio export.
+  const keystoreBlob = includeSigning ? createKeystoreBlob(config.keystore) : null;
+  if (keystoreBlob) {
+    files.push({ path: `app/${safeKeystoreFileName(config.keystore.fileName)}`, content: keystoreBlob });
+  }
+
+  return files;
+}
+
+async function addProjectFiles(zip: JSZip, files: ProjectFile[]): Promise<void> {
+  for (const file of files) {
+    zip.file(file.path, file.content);
+  }
+}
+
+const ZIP_OPTIONS = {
+  type: 'blob' as const,
+  compression: 'DEFLATE' as const,
+  compressionOptions: { level: 6 },
+};
+
+/**
+ * Export for Android Studio: a standalone, compilable Gradle project.
+ */
+export async function createAndroidStudioProjectZip(config: AppConfig): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
+  const zip = new JSZip();
+  await addProjectFiles(zip, await buildAndroidProjectFiles(config, { includeSigning: true }));
+
+  zip.file('README.md', generateProjectReadme(config));
+  zip.file('SIGNING.txt', generateKeystoreReadme(config.keystore));
+  zip.file(
+    'OPEN-IN-ANDROID-STUDIO.txt',
+    `1. Unzip this folder.
+2. Android Studio -> File -> Open... -> select this folder.
+3. Wait for "Gradle sync" to finish (the included wrapper downloads Gradle ${GRADLE_VERSION} automatically).
+4. Press Run to install on your phone/emulator, or
+   Build -> Generate Signed Bundle / APK... to create a release APK/AAB.
+
+Command line (optional) — the Gradle wrapper is included:
+  macOS/Linux: chmod +x gradlew && ./gradlew :app:assembleDebug
+  Windows:     gradlew.bat :app:assembleDebug
+  Google Play: ./gradlew :app:bundleRelease
+`
+  );
+
+  return zip.generateAsync(ZIP_OPTIONS);
+}
+
+/**
+ * Export for GitHub: the same compilable Android project, plus:
+ *  - a working GitHub Actions workflow that builds a real APK + AAB,
+ *  - the hosted PWA files at the repo root (GitHub Pages),
+ *  - real PNG icons,
+ *  - a .gitignore that keeps keystores and build output out of git.
  */
 export async function createGitHubRepoZip(config: AppConfig): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
+  await addProjectFiles(zip, await buildAndroidProjectFiles(config, { includeSigning: false }));
 
-  // 1. Web & PWA Standalone files
+  zip.file('.github/workflows/build-apk.yml', generateGitHubActionsWorkflow(config));
+  zip.file('.gitignore', generateGitignore());
+  zip.file('README.md', generateProjectReadme(config));
+  zip.file('SIGNING.txt', generateKeystoreReadme(config.keystore, false));
+
+  // Hosted PWA version at the repository root.
   zip.file('index.html', generateAppHtml(config));
   zip.file('manifest.webmanifest', JSON.stringify(generateManifestJson(config), null, 2));
   zip.file('sw.js', generateServiceWorkerJs(config));
   zip.file('capacitor.config.json', generateCapacitorConfig(config));
-  zip.file('README.md', generateReadmeMd(config));
-
-  // 2. Native Android Project Structure (AppCreator24 compliant)
-  zip.file('settings.gradle', `rootProject.name = "${config.shortName}"\ninclude ':app'\n`);
-  zip.file(
-    'build.gradle',
-    `buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath 'com.android.tools.build:gradle:8.7.0'\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'\n    }\n}\n\nallprojects {\n    repositories {\n        google()\n        mavenCentral()\n    }\n}\n`
+  const pwaIcons = await buildPwaIconAssets(config);
+  await addProjectFiles(
+    zip,
+    pwaIcons.map((asset) => ({ path: asset.path, content: asset.blob }))
   );
-  zip.file('gradle.properties', generateSigningGradleProperties(config.keystore));
-  zip.file('app/build.gradle', generateBuildGradle(config));
-  zip.file('app/src/main/AndroidManifest.xml', generateAndroidManifestXml(config));
 
-  // Kotlin MainActivity in package directory
-  const packagePath = (config.appPackageId || 'com.example.app').replace(/\./g, '/');
-  zip.file(`app/src/main/java/${packagePath}/MainActivity.kt`, generateMainActivityKt(config));
-
-  // Automated GitHub Actions CI/CD to build APK & AAB
-  zip.file('.github/workflows/build-apk.yml', generateGitHubActionsWorkflow(config));
-
-  // 3. Android Signing Keystore File (.keystore)
-  const keystoreBlob = createKeystoreBlob(config.keystore);
-  zip.file(config.keystore.fileName || 'release.keystore', keystoreBlob);
-
-  // 4. Icons directory with SVG placeholder
-  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-    <rect width="512" height="512" rx="100" fill="${config.themeColor}" />
-    <circle cx="256" cy="256" r="160" fill="${config.accentColor}" opacity="0.3" />
-    <text x="256" y="280" font-family="system-ui, sans-serif" font-size="120" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">
-      ${config.shortName.slice(0, 2).toUpperCase()}
-    </text>
-  </svg>`;
-
-  zip.file('icons/icon.svg', iconSvg);
-  zip.file('icons/README.txt', 'Replace icon-192.png and icon-512.png with your branded icons.');
-
-  return await zip.generateAsync({ type: 'blob' });
+  return zip.generateAsync(ZIP_OPTIONS);
 }
 
-/**
- * Creates a complete, 100% ready-to-compile Android Studio project (.ZIP)
- * containing Gradle 8.9 wrapper, Android Gradle Plugin 8.7.0, Kotlin MainActivity,
- * signing release keystore, and complete offline web assets.
- */
-export async function createAndroidStudioProjectZip(config: AppConfig): Promise<Blob> {
-  const zip = new JSZip();
-
-  // 1. Root Gradle Build Configuration
-  zip.file(
-    'settings.gradle',
-    `pluginManagement {
-    repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\\\.android.*")
-                includeGroupByRegex("com\\\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
-        mavenCentral()
-        gradlePluginPortal()
-    }
+/** File list shown in the export UI (paths only). */
+export async function listProjectFiles(config: AppConfig): Promise<string[]> {
+  const files = await buildAndroidProjectFiles(config);
+  return files.map((file) => file.path).sort();
 }
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "${config.shortName}"
-include ':app'
-`
-  );
-
-  zip.file(
-    'build.gradle',
-    `// Top-level build file where you can add configuration options common to all sub-projects/modules.
-plugins {
-    id 'com.android.application' version '8.7.0' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
-
-tasks.register('clean', Delete) {
-    delete rootProject.buildDir
-}
-`
-  );
-
-  zip.file(
-    'gradle.properties',
-    `# Project-wide Gradle settings for Android Studio
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.enableJetifier=true
-android.nonTransitiveRClass=true
-kotlin.code.style=official
-
-# Release Signing Credentials for ${config.appName}
-RELEASE_STORE_FILE=${config.keystore.fileName || 'release.keystore'}
-RELEASE_STORE_PASSWORD=${config.keystore.storePassword}
-RELEASE_KEY_ALIAS=${config.keystore.alias || 'appcraft'}
-RELEASE_KEY_PASSWORD=${config.keystore.keyPassword}
-`
-  );
-
-  zip.file(
-    'local.properties',
-    `## Android Studio SDK Path Configuration
-## Uncomment and adjust for your local machine if not auto-detected:
-## macOS:   sdk.dir=/Users/YOUR_USER/Library/Android/sdk
-## Windows: sdk.dir=C\\\\:\\\\Users\\\\YOUR_USER\\\\AppData\\\\Local\\\\Android\\\\Sdk
-## Linux:   sdk.dir=/home/YOUR_USER/Android/Sdk
-`
-  );
-
-  // 2. Gradle Wrapper
-  zip.file(
-    'gradle/wrapper/gradle-wrapper.properties',
-    `distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip
-networkTimeout=10000
-validateDistributionUrl=true
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-`
-  );
-
-  zip.file(
-    'gradlew',
-    `#!/usr/bin/env sh
-# Gradle wrapper script for Unix/Linux/macOS
-APP_BASE_NAME=\`basename "\$0"\`
-DIRNAME=\`dirname "\$0"\`
-[ -z "\$DIRNAME" ] && DIRNAME=.
-APP_HOME=\`cd "\$DIRNAME" && pwd\`
-exec java -jar "\$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "\$@"
-`
-  );
-
-  zip.file(
-    'gradlew.bat',
-    `@rem Gradle wrapper script for Windows
-@if "%DEBUG%"=="" @echo off
-set DIRNAME=%~dp0
-if "%DIRNAME%"=="" set DIRNAME=.
-set APP_HOME=%DIRNAME%
-java -jar "%APP_HOME%gradle\\wrapper\\gradle-wrapper.jar" %*
-`
-  );
-
-  // 3. App Module (app/build.gradle)
-  zip.file('app/build.gradle', generateBuildGradle(config));
-  zip.file(
-    'app/proguard-rules.pro',
-    `# Proguard rules for ${config.appName}
--keepattributes JavascriptInterface
--keepclassmembers class * {
-    @android.webkit.JavascriptInterface <methods>;
-}
--keep class com.google.android.gms.ads.** { *; }
--dontwarn com.google.android.gms.ads.**
-`
-  );
-
-  // 4. Android Manifest & Kotlin Code
-  zip.file('app/src/main/AndroidManifest.xml', generateAndroidManifestXml(config));
-  const packagePath = (config.appPackageId || 'com.example.app').replace(/\./g, '/');
-  zip.file(`app/src/main/java/${packagePath}/MainActivity.kt`, generateMainActivityKt(config));
-
-  // 5. Native Resources (strings, colors, layouts, icons)
-  zip.file(
-    'app/src/main/res/values/strings.xml',
-    `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">${config.appName}</string>
-    <string name="app_short_name">${config.shortName}</string>
-    <string name="version_name">${config.versionName}</string>
-</resources>
-`
-  );
-
-  zip.file(
-    'app/src/main/res/values/colors.xml',
-    `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="colorPrimary">${config.themeColor}</color>
-    <color name="colorAccent">${config.accentColor}</color>
-    <color name="colorBackground">${config.backgroundColor}</color>
-    <color name="topBarColor">${config.topBar.bgColor}</color>
-</resources>
-`
-  );
-
-  zip.file(
-    'app/src/main/res/values/themes.xml',
-    `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.App.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">${config.themeColor}</item>
-        <item name="colorSecondary">${config.accentColor}</item>
-        <item name="android:statusBarColor">${config.topBar.bgColor}</item>
-        <item name="android:windowLightStatusBar">${config.themeColor === '#ffffff'}</item>
-    </style>
-</resources>
-`
-  );
-
-  zip.file(
-    'app/src/main/res/layout/activity_main.xml',
-    `<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:ads="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="${config.backgroundColor}">
-
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefreshLayout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@+id/adView">
-
-        <WebView
-            android:id="@+id/webView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:layout_alignParentTop="true"
-        android:visibility="gone" />
-
-    ${config.admob?.enabled ? `<com.google.android.gms.ads.AdView
-        android:id="@+id/adView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        ads:adSize="BANNER"
-        ads:adUnitId="${config.admob.bannerUnitId || 'ca-app-pub-3940256099942544/6300978111'}" />` : '<View android:id="@+id/adView" android:layout_width="0dp" android:layout_height="0dp" android:layout_alignParentBottom="true" />'}
-</RelativeLayout>
-`
-  );
-
-  // 6. Assets Directory (Offline Web App)
-  zip.file('app/src/main/assets/index.html', generateAppHtml(config));
-  zip.file('app/src/main/assets/manifest.webmanifest', JSON.stringify(generateManifestJson(config), null, 2));
-  zip.file('app/src/main/assets/sw.js', generateServiceWorkerJs(config));
-  zip.file(
-    'app/src/main/assets/app-config.json',
-    JSON.stringify(
-      {
-        appName: config.appName,
-        shortName: config.shortName,
-        packageId: config.appPackageId,
-        versionCode: config.versionCode,
-        versionName: config.versionName,
-        targetSdk: config.androidSdk.targetSdk,
-        compileSdk: config.androidSdk.compileSdk,
-      },
-      null,
-      2
-    )
-  );
-
-  // 7. Keystore file
-  const keystoreBlob = createKeystoreBlob(config.keystore);
-  zip.file(`app/${config.keystore.fileName || 'release.keystore'}`, keystoreBlob);
-
-  // 8. Comprehensive Instructions for Android Studio
-  zip.file(
-    'README-ANDROID-STUDIO.md',
-    `# ${config.appName} — Android Studio Project (Target SDK ${config.androidSdk.targetSdk})
-
-This is a complete, standalone native Android Studio project generated by AppCraft Studio.
-
-## 🚀 How to Open in Android Studio:
-1. Extract this entire \`.zip\` archive to a folder on your computer.
-2. Launch **Android Studio** (Ladybug, Koala, Jellyfish, or newer).
-3. Click **File** &rarr; **Open...** and select the unzipped directory.
-4. Android Studio will automatically recognize Gradle and run **Gradle Sync**.
-5. Once sync finishes, click the green **Run (▶)** button to test on an Android device or emulator!
-
-## 📦 How to Build Signed APK or AAB:
-### In Android Studio:
-1. Go to **Build** &rarr; **Generate Signed Bundle / APK...**
-2. Choose **Android App Bundle (.aab)** for Google Play, or **APK (.apk)** for direct installation.
-3. Keystore path: \`app/${config.keystore.fileName || 'release.keystore'}\` (already generated and included!)
-4. Key alias: \`${config.keystore.alias || 'appcraft'}\`
-5. Keystore password: \`${config.keystore.storePassword}\`
-6. Key password: \`${config.keystore.keyPassword}\`
-7. Click **Create** & your release APK/AAB is built!
-
-### In Command Line:
-\`\`\`bash
-# Build Release APK
-./gradlew assembleRelease
-
-# Build Google Play App Bundle (AAB)
-./gradlew bundleRelease
-\`\`\`
-
-## 📱 Project Specifications:
-- **Application ID:** \`${config.appPackageId}\`
-- **Target SDK:** \`${config.androidSdk.targetSdk}\` (Android 16 Baklava)
-- **Compile SDK:** \`${config.androidSdk.compileSdk}\`
-- **Min SDK:** \`${config.androidSdk.minSdk}\`
-- **Version Code:** \`${config.versionCode}\`
-- **Version Name:** \`${config.versionName}\`
-- **AdMob Status:** ${config.admob.enabled ? `Enabled (App ID: ${config.admob.appId || 'test mode'})` : 'Disabled'}
-`
-  );
-
-  return await zip.generateAsync({ type: 'blob' });
-}
-
-/**
- * Downloads the full Android Studio project ZIP ready to open in Android Studio.
- */
-export async function downloadAndroidStudioProject(config: AppConfig): Promise<void> {
-  const blob = await createAndroidStudioProjectZip(config);
-  const cleanName = config.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-  const fileName = `${cleanName}-android-studio-project.zip`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-

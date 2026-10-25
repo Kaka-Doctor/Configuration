@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';
@@ -216,6 +216,7 @@ export const BrandingEditor: React.FC<BrandingEditorProps> = ({ config, onChange
             onClear={() => updateLogo({ customImageUrl: undefined })}
             placeholderText="Upload app logo / icon from your device"
             previewShape="square"
+            maxDimension={512}
           />
         </div>
       </div>

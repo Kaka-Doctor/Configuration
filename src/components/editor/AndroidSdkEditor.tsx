@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { Cpu, ShieldCheck, Layers, Terminal, Sparkles, CheckSquare } from 'lucide-react';
 
 interface AndroidSdkEditorProps {

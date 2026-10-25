@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppConfig, MenuItem, MenuActionType } from '../../types/appConfig';
+import type { AppConfig, MenuItem, MenuActionType } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { IconPickerModal } from '../IconPickerModal';
 import { ImageUploadField } from '../common/ImageUploadField';
@@ -204,6 +204,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ config, onChange }) => {
                   onClear={() => updateDrawerHeader({ customAvatarUrl: undefined })}
                   placeholderText="Upload drawer avatar image"
                   previewShape="circle"
+                  maxDimension={256}
                 />
               </div>
             )}
@@ -349,6 +350,18 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ config, onChange }) => {
                         />
                       </div>
                     </div>
+
+                    {/* Custom row image from the device (optional) */}
+                    <ImageUploadField
+                      label="Custom Menu Image (optional)"
+                      description="Replaces the icon for this row in the drawer. PNG/JPG/WebP/SVG."
+                      value={item.customImageUrl}
+                      onChange={(dataUrl) => updateItem(item.id, { customImageUrl: dataUrl })}
+                      onClear={() => updateItem(item.id, { customImageUrl: undefined })}
+                      placeholderText="Upload an image for this menu row"
+                      previewShape="square"
+                      maxDimension={256}
+                    />
 
                     {/* Action Type */}
                     <div>

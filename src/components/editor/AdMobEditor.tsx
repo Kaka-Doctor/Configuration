@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { DollarSign, ShieldAlert, Sparkles, CheckCircle2, Copy } from 'lucide-react';
 
 interface AdMobEditorProps {

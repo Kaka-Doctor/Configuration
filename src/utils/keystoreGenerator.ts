@@ -1,106 +1,109 @@
-import { KeystoreConfig } from '../types/appConfig';
+import type { KeystoreConfig } from '../types/appConfig';
 
 /**
- * Generates deterministic SHA-1 and SHA-256 fingerprints based on alias and developer name.
+ * IMPORTANT: a real Android signing key cannot be generated in a browser.
+ * Generating an RSA key pair + X.509 certificate requires a crypto/keystore
+ * implementation (keytool, Android Studio, or the JVM). This module therefore
+ * only handles a keystore that the user actually created and uploaded.
+ *
+ * Anything else (fake fingerprints, dummy binary blobs) was removed because it
+ * produced files that Android Studio / Gradle / Play Console reject.
  */
-export function generateCertificateFingerprints(alias: string, developer: string) {
-  const seed = `${alias}-${developer}-2026-android-appcraft`;
-  let hash1 = 0x811c9dc5;
-  let hash2 = 0x9e3779b9;
-  for (let i = 0; i < seed.length; i++) {
-    hash1 ^= seed.charCodeAt(i);
-    hash1 = (hash1 * 0x01000193) >>> 0;
-    hash2 ^= seed.charCodeAt(i);
-    hash2 = (hash2 * 0x85ebca6b) >>> 0;
-  }
-
-  const hexBytes1 = [
-    (hash1 >> 24) & 0xff,
-    (hash1 >> 16) & 0xff,
-    (hash1 >> 8) & 0xff,
-    hash1 & 0xff,
-    (hash2 >> 24) & 0xff,
-    (hash2 >> 16) & 0xff,
-    (hash2 >> 8) & 0xff,
-    hash2 & 0xff,
-    0x4f, 0x12, 0x99, 0xab, 0x3d, 0xef, 0x77, 0x22, 0x5a, 0x88, 0x11, 0xcc,
-  ];
-
-  const sha1 = hexBytes1.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
-
-  const hexBytes2 = [
-    ...hexBytes1,
-    0x19, 0x2e, 0x3d, 0x4c, 0x5b, 0x6a, 0x79, 0x88, 0x97, 0xa6, 0xb5, 0xc4,
-  ];
-  const sha256 = hexBytes2.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
-
-  return { sha1, sha256 };
-}
 
 export const DEFAULT_KEYSTORE_CONFIG: KeystoreConfig = {
   mode: 'generate',
   fileName: 'release.keystore',
-  alias: 'appcraft-key',
-  storePassword: 'appcraft-secure-pass-2026',
-  keyPassword: 'appcraft-secure-pass-2026',
+  alias: 'appcraft',
+  storePassword: '',
+  keyPassword: '',
   validityYears: 25,
   developerName: 'Android App Developer',
   organization: 'Mobile Studio Apps',
   countryCode: 'US',
-  sha1Fingerprint: '4F:12:99:AB:3D:EF:77:22:5A:88:11:CC:81:1C:9D:C5:9E:37:79:B9',
-  sha256Fingerprint: '4F:12:99:AB:3D:EF:77:22:5A:88:11:CC:81:1C:9D:C5:9E:37:79:B9:19:2E:3D:4C:5B:6A:79:88:97:A6:B5:C4',
   isCustomUploaded: false,
 };
 
-/**
- * Creates a valid PKCS12 / Java Keystore binary envelope so users can download real .keystore files.
- */
-export function createKeystoreBlob(config: KeystoreConfig): Blob {
-  const header = new TextEncoder().encode(
-    `# ANDROID KEYSTORE (PKCS12/JKS)\n# Alias: ${config.alias}\n# Developer: ${config.developerName}\n# Org: ${config.organization}\n# SHA-1: ${config.sha1Fingerprint}\n# SHA-256: ${config.sha256Fingerprint}\n`
-  );
-
-  // If user uploaded their custom base64, return decoded blob
-  if (config.isCustomUploaded && config.uploadedBase64) {
-    try {
-      const binaryString = atob(config.uploadedBase64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return new Blob([bytes], { type: 'application/x-java-keystore' });
-    } catch {}
+/** Decodes the base64 payload of an uploaded keystore into raw bytes. */
+export function keystoreBase64ToBytes(base64?: string): Uint8Array | null {
+  if (!base64) return null;
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    // A PKCS12/JKS file is never empty and always starts with the JKS magic
+    // 0xFEEDFEED or the ASN.1 SEQUENCE tag 0x30 used by PKCS12.
+    if (bytes.length < 32) return null;
+    if (!(bytes[0] === 0xfe || bytes[0] === 0x30)) return null;
+    return bytes;
+  } catch {
+    return null;
   }
+}
 
-  // Synthesize PKCS12 / keystore binary bytes
-  const payload = new Uint8Array(512);
-  payload[0] = 0xfe; // Magic byte
-  payload[1] = 0xed;
-  payload[2] = 0xfe;
-  payload[3] = 0xed; // Java keystore magic 0xfeedfeed
-  payload[4] = 0x00;
-  payload[5] = 0x00;
-  payload[6] = 0x00;
-  payload[7] = 0x02; // Version 2
-
-  const aliasBytes = new TextEncoder().encode(config.alias);
-  payload.set(aliasBytes.slice(0, 32), 8);
-
-  const combined = new Uint8Array(header.length + payload.length);
-  combined.set(header, 0);
-  combined.set(payload, header.length);
-
-  return new Blob([combined], { type: 'application/x-java-keystore' });
+/** True when the user uploaded a keystore that looks structurally valid. */
+export function hasUsableKeystore(config: KeystoreConfig): boolean {
+  return config.isCustomUploaded && keystoreBase64ToBytes(config.uploadedBase64) !== null;
 }
 
 /**
- * Generates the gradle.properties signing credentials.
+ * Sanitises a keystore file name so it can only ever create a file inside the
+ * exported `app/` folder (no `..` or absolute paths) and stays shell-safe.
  */
-export function generateSigningGradleProperties(config: KeystoreConfig): string {
-  return `# Android App Release Signing Properties
-RELEASE_STORE_FILE=${config.fileName || 'release.keystore'}
-RELEASE_STORE_PASSWORD=${config.storePassword}
-RELEASE_KEY_ALIAS=${config.alias}
-RELEASE_KEY_PASSWORD=${config.keyPassword}
-`;
+export function safeKeystoreFileName(name?: string): string {
+  const base = String(name || '').split(/[\\/]/).pop() || '';
+  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '');
+  if (!cleaned) return 'release.keystore';
+  return /\.(keystore|jks)$/i.test(cleaned) ? cleaned : `${cleaned}.keystore`;
+}
+
+/** Quotes a value for the copy-paste keytool commands shown in the UI. */
+function shellQuote(value: string): string {
+  return `"${String(value).replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+/** Returns the uploaded keystore as a Blob, or null when there is nothing real to provide. */
+export function createKeystoreBlob(config: KeystoreConfig): Blob | null {
+  const bytes = keystoreBase64ToBytes(config.uploadedBase64);
+  if (!config.isCustomUploaded || !bytes) return null;
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new Blob([buffer], { type: 'application/x-java-keystore' });
+}
+
+/** Ready-to-run command that creates a genuine release keystore on the user's machine. */
+export function getKeytoolCommand(config: KeystoreConfig): string {
+  const alias = (config.alias || 'appcraft').replace(/[^A-Za-z0-9._-]/g, '');
+  const fileName = safeKeystoreFileName(config.fileName);
+  const developerName = String(config.developerName || 'Android App Developer').replace(/["\\\r\n]/g, ' ');
+  const organization = String(config.organization || 'Mobile Studio Apps').replace(/["\\\r\n]/g, ' ');
+  const country = (config.countryCode || 'US').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'US';
+  const dname = `CN=${developerName}, O=${organization}, C=${country}`;
+  return [
+    'keytool -genkeypair -v \\',
+    `  -keystore ${shellQuote(fileName)} \\`,
+    `  -alias ${shellQuote(alias)} \\`,
+    '  -keyalg RSA -keysize 2048 \\',
+    `  -validity ${Math.max(1, Math.round(config.validityYears || 25)) * 365} \\`,
+    `  -dname "${dname}"`,
+  ].join('\n');
+}
+
+/** Command that prints the real SHA-1 / SHA-256 fingerprints of a keystore. */
+export function getFingerprintCommand(fileName: string, alias = 'appcraft'): string {
+  const safeAlias = (alias || 'appcraft').replace(/[^A-Za-z0-9._-]/g, '') || 'appcraft';
+  return `keytool -list -v -keystore ${shellQuote(safeKeystoreFileName(fileName))} -alias ${shellQuote(safeAlias)}`;
+}
+
+/** Generates the optional `.env`-free CI signing snippet used by the workflow. */
+export function getGitHubSecretsGuide(config: KeystoreConfig): string {
+  return `1. Create a real keystore (Android Studio > Build > Generate Signed Bundle, or keytool).
+2. Base64-encode it:
+   - macOS/Linux: base64 -w 0 release.keystore
+   - Windows:     certutil -encode release.keystore keystore.b64  (then remove header/footer lines)
+3. In your GitHub repo open Settings > Secrets and variables > Actions and add:
+   KEYSTORE_BASE64   = the base64 text
+   KEYSTORE_PASSWORD = your store password
+   KEY_ALIAS         = ${config.alias || 'appcraft'}
+   KEY_PASSWORD      = your key password
+4. Push to main (or run the "Build Android APK & AAB" workflow manually).
+   The workflow signs the release build with your key and publishes the APK to Releases.`;
 }

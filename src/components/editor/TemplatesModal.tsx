@@ -1,6 +1,6 @@
 import React from 'react';
 import { PRESET_TEMPLATES } from '../../utils/presets';
-import { AppConfig } from '../../types/appConfig';
+import type { AppConfig } from '../../types/appConfig';
 import { renderAppIcon } from '../../utils/iconMap';
 import { X, Sparkles, Check, ArrowRight } from 'lucide-react';
 

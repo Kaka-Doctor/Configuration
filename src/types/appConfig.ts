@@ -37,8 +37,6 @@ export interface KeystoreConfig {
   developerName: string;
   organization: string;
   countryCode: string;
-  sha1Fingerprint: string;
-  sha256Fingerprint: string;
   isCustomUploaded: boolean;
   uploadedBase64?: string;
 }

@@ -1,6 +1,6 @@
 {
   "name": "Android PWA Studio & App Creator",
-  "description": "Visual studio to design, preview, and build custom Android PWAs with splash screens, custom logos, dynamic menus, launchpad icons, and ready-to-host GitHub repository exports.",
+  "description": "Visual studio to design Android apps and PWAs, export a compilable Android Studio project, and build a real, installable APK and Play-ready AAB with GitHub Actions.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

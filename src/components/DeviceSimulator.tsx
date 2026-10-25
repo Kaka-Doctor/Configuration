@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppConfig, LaunchpadIconItem, MenuItem } from '../types/appConfig';
+import type { AppConfig, LaunchpadIconItem, MenuItem } from '../types/appConfig';
 import { renderAppIcon } from '../utils/iconMap';
 import {
   RotateCw,
@@ -664,7 +664,15 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       className="w-full flex items-center justify-between p-2.5 rounded-xl text-left text-xs font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-slate-500">{renderAppIcon(item.icon, 18)}</span>
+                        {item.customImageUrl ? (
+                          <img
+                            src={item.customImageUrl}
+                            alt=""
+                            className="w-[18px] h-[18px] rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="text-slate-500">{renderAppIcon(item.icon, 18)}</span>
+                        )}
                         <span>{item.label}</span>
                       </div>
                       {item.badge && (
