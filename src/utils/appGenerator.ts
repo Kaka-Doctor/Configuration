@@ -1691,6 +1691,7 @@ export function generateAppHtml(config: AppConfig): string {
       if (!url) return;
       if (DOWNLOAD_EXT.test(url) && DATA.downloads && DATA.downloads.enabled) { downloadFile(url); return; }
       if (external) { openExternal(url); return; }
+      if (DATA.downloads && DATA.downloads.inAppBrowser === false) { openExternal(url); return; }
       if (window.AndroidBridge && window.AndroidBridge.openInApp) {
         window.AndroidBridge.openInApp(url);
         return;

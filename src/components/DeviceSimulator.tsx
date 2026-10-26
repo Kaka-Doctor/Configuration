@@ -158,7 +158,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
 
   const openSite = (url: string, external?: boolean) => {
     if (!url) return;
-    if (external) {
+    if (external || config.downloads?.inAppBrowser === false) {
       window.open(url, '_blank', 'noopener,noreferrer');
       return;
     }

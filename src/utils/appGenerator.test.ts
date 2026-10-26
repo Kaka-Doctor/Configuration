@@ -483,6 +483,10 @@ test('YouTube links play in an embed and frame-blocked sites get a fallback', ()
   assert.ok(html.includes('Open in browser / app'), 'the fallback offers the real browser');
   assert.ok(html.includes('function openLink(url, external'), 'links honour the per-item external flag');
   assert.ok(html.includes('destination.openExternally'), 'destinations pass the external flag');
+  assert.ok(
+    html.includes('DATA.downloads.inAppBrowser === false'),
+    'the in-app browser preference is honoured'
+  );
   assert.ok(html.includes('FRAME_BLOCKED'), 'known embed-blocking hosts are detected');
 });
 
