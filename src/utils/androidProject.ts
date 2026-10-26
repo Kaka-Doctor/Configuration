@@ -931,10 +931,12 @@ jobs:
       - name: Point the app at this repository's live content
         run: |
           python3 - <<'PY'
+          import os
           import pathlib
           repo = "\${{ github.repository }}"
-          url = f"https://raw.githubusercontent.com/{repo}/main/app-config.json"
-          for name in ("index.html", "app/src/main/assets/index.html"):
+          branch = os.environ.get("GITHUB_REF_NAME", "main")
+          url = f"https://raw.githubusercontent.com/{repo}/{branch}/app-config.json"
+          for name in ("index.html", "app-config.json", "app/src/main/assets/index.html", "app/src/main/assets/app-config.json"):
               path = pathlib.Path(name)
               if path.exists():
                   path.write_text(

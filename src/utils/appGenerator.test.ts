@@ -183,6 +183,7 @@ test('generateGitHubActionsWorkflow builds APK and AAB', () => {
   assert.ok(yml.includes('softprops/action-gh-release'), 'Publishes a stable download link');
   assert.ok(!yml.includes('./gradlew'), 'Does not depend on a missing wrapper jar');
   assert.ok(yml.includes('env.APP_SLUG'), 'Uses workflow expressions for action inputs');
+  assert.ok(yml.includes('GITHUB_REF_NAME'), 'Live feed follows the branch that was built');
 });
 
 test('generated project contains every resource the manifest references', async () => {
