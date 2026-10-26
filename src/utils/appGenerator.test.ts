@@ -556,6 +556,11 @@ test('Android project bridges share, downloads, notifications and ad frequency',
   );
   assert.ok(activity.includes('INTERSTITIAL_EVERY = 7'), 'interstitial frequency is wired');
   assert.ok(activity.includes('APP_OPEN_EVERY = 3'), 'app-open frequency is wired');
+  assert.ok(
+    activity.includes('request.addRequestHeader("User-Agent", userAgent)'),
+    'downloads carry the page user agent without an unsupported setter'
+  );
+  assert.ok(activity.includes('adView.setAdSize('), 'adaptive banner size uses the SDK setter');
 
   const layout = String(byPath.get('app/src/main/res/layout/activity_main.xml') || '');
   assert.ok(layout.includes('ads:adSize="LARGE_BANNER"'), 'large banner size is used');

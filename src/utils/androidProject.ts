@@ -343,7 +343,7 @@ import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
         if (BANNER_SIZE == "adaptive") {
             val metrics = resources.displayMetrics
             val widthDp = (metrics.widthPixels / metrics.density).toInt()
-            adView.adSize = AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, widthDp)
+            adView.setAdSize(AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, widthDp))
         }
         adView.loadAd(AdRequest.Builder().build())
     }
@@ -620,7 +620,7 @@ ${notificationPermission}${adInit}    }
             request.setDescription("Downloading to your Downloads folder")
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            if (!userAgent.isNullOrBlank()) request.setUserAgent(userAgent)
+            if (!userAgent.isNullOrBlank()) request.addRequestHeader("User-Agent", userAgent)
             val cookie = CookieManager.getInstance().getCookie(url)
             if (!cookie.isNullOrBlank()) request.addRequestHeader("Cookie", cookie)
             val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager

@@ -1692,10 +1692,8 @@ export function generateAppHtml(config: AppConfig): string {
       if (DOWNLOAD_EXT.test(url) && DATA.downloads && DATA.downloads.enabled) { downloadFile(url); return; }
       if (external) { openExternal(url); return; }
       if (DATA.downloads && DATA.downloads.inAppBrowser === false) { openExternal(url); return; }
-      if (window.AndroidBridge && window.AndroidBridge.openInApp) {
-        window.AndroidBridge.openInApp(url);
-        return;
-      }
+      // The in-app browser sheet keeps the app's own UI (and its Back button)
+      // intact, in the PWA and in the Android WebView alike.
       openBrowser(url);
     }
     function youtubeEmbedUrl(url) {
