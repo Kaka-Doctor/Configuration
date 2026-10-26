@@ -3,6 +3,7 @@ import type { AppConfig } from '../../types/appConfig';
 import {
   DEFAULT_DATA_SYNC,
   DEFAULT_DOWNLOADS,
+  DEFAULT_FCM,
   DEFAULT_IN_APP_SETTINGS,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_PAGES,
@@ -12,14 +13,17 @@ import {
   Bell,
   CloudDownload,
   FileText,
+  Flame,
   Share2,
   SlidersHorizontal,
   Star,
   Info,
   RefreshCw,
   Github,
+  Upload,
 } from 'lucide-react';
 import { loadSavedRepo } from '../../utils/exportService';
+import { parseGoogleServicesJson, sanitizeFcmTopic } from '../../utils/fcm';
 
 interface AppFeaturesEditorProps {
   config: AppConfig;
@@ -92,7 +96,10 @@ export const AppFeaturesEditor: React.FC<AppFeaturesEditorProps> = ({ config, on
   const sync = { ...DEFAULT_DATA_SYNC, ...(config.dataSync || {}) };
   const notifications = { ...DEFAULT_NOTIFICATIONS, ...(config.notifications || {}) };
   const downloads = { ...DEFAULT_DOWNLOADS, ...(config.downloads || {}) };
+  const fcm = { ...DEFAULT_FCM, ...(config.fcm || {}) };
+  const fcmFile = parseGoogleServicesJson(fcm.googleServicesJson, config.appPackageId);
   const savedRepo = loadSavedRepo();
+  const fcmInputRef = React.useRef<HTMLInputElement>(null);
 
   const updateShare = (partial: Partial<typeof share>) =>
     onChange({ ...config, share: { ...share, ...partial } });
@@ -106,6 +113,14 @@ export const AppFeaturesEditor: React.FC<AppFeaturesEditorProps> = ({ config, on
     onChange({ ...config, notifications: { ...notifications, ...partial } });
   const updateDownloads = (partial: Partial<typeof downloads>) =>
     onChange({ ...config, downloads: { ...downloads, ...partial } });
+  const updateFcm = (partial: Partial<typeof fcm>) =>
+    onChange({ ...config, fcm: { ...fcm, ...partial } });
+
+  const loadFcmFile = async (file?: File) => {
+    if (!file) return;
+    const text = await file.text();
+    updateFcm({ googleServicesJson: text, enabled: true });
+  };
 
   return (
     <div className="space-y-6 text-sm text-slate-300">
@@ -375,6 +390,96 @@ export const AppFeaturesEditor: React.FC<AppFeaturesEditorProps> = ({ config, on
         <p className="text-[11px] text-slate-500">
           Feed format: <code>{'[{ "id": "1", "title": "Hello", "body": "New update", "url": "https://..." }]'}</code>{' '}
           or <code>{'{ "notifications": [ ... ] }'}</code>.
+        </p>
+      </Card>
+
+      {/* Firebase Cloud Messaging */}
+      <Card
+        icon={<Flame size={16} className="text-orange-400" />}
+        title="Firebase Cloud Messaging (optional)"
+        subtitle="Add your own Firebase project if you have one. FCM delivers notifications while the app is closed; without it the inbox still works by polling."
+      >
+        <Toggle
+          checked={fcm.enabled}
+          onChange={(value) => updateFcm({ enabled: value })}
+          label="Enable FCM closed-app push notifications"
+        />
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fcmInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
+          >
+            <Upload size={13} />
+            Upload google-services.json
+          </button>
+          <input
+            ref={fcmInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(event) => {
+              void loadFcmFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+          <span className="text-[10px] text-slate-500">from Firebase → Project settings → Your apps</span>
+        </div>
+
+        <div>
+          <label className={labelClass}>Or paste the file contents</label>
+          <textarea
+            className={`${inputClass} min-h-[90px] font-mono text-[10px]`}
+            placeholder='{ "project_info": { "project_id": "...", "project_number": "..." }, "client": [ ... ] }'
+            value={fcm.googleServicesJson}
+            onChange={(event) => updateFcm({ googleServicesJson: event.target.value })}
+          />
+        </div>
+
+        {fcm.googleServicesJson.trim() !== '' && (
+          fcmFile.ok ? (
+            <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-3 text-[11px] text-emerald-200 space-y-0.5">
+              <p className="font-semibold">Ready for this package</p>
+              <p>Project: {fcmFile.details.projectId}</p>
+              <p>Android package: {fcmFile.details.packageName}</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-rose-700/60 bg-rose-950/40 p-3 text-[11px] text-rose-200">
+              {fcmFile.error}
+            </div>
+          )
+        )}
+
+        {fcm.enabled && !fcmFile.ok && fcm.googleServicesJson.trim() === '' && (
+          <p className="text-[11px] text-amber-300">
+            FCM is switched on but no file is present yet. The exported Android project will build
+            without Firebase until you add a matching google-services.json.
+          </p>
+        )}
+
+        <div>
+          <label className={labelClass}>Topic every install subscribes to</label>
+          <input
+            className={inputClass}
+            placeholder="all"
+            value={fcm.topic}
+            onChange={(event) => updateFcm({ topic: sanitizeFcmTopic(event.target.value) })}
+          />
+        </div>
+
+        <Toggle
+          checked={fcm.showTokenInSettings}
+          onChange={(value) => updateFcm({ showTokenInSettings: value })}
+          label="Show the FCM device token in the app settings (for testing)"
+        />
+
+        <p className="text-[11px] text-slate-500 flex items-start gap-2">
+          <Info size={13} className="mt-0.5 shrink-0" />
+          Send a test from Firebase Console → Messaging → “Send test message” to the topic, or use
+          the topic in your own server. FCM applies to the installed Android app; the hosted PWA
+          keeps using the notification feed. The file is only compiled in when its package matches{' '}
+          <code>{config.appPackageId}</code>.
         </p>
       </Card>
 

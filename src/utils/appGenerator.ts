@@ -11,6 +11,7 @@ import {
   generateAppBuildGradle,
   generateAppBuildGradle as generateBuildGradle,
   generateColorsXml,
+  generateFcmServiceKt,
   generateGitHubActionsWorkflow,
   generateGitignore,
   generateGradleProperties,
@@ -18,6 +19,7 @@ import {
   generateLocalProperties,
   generateMainActivityKt,
   generateNetworkSecurityConfig,
+  generateNotificationIconXml,
   generateProguardRules,
   generateProjectReadme,
   generateProjectReadme as generateReadmeMd,
@@ -29,6 +31,7 @@ import {
   generateWrapperProperties,
 } from './androidProject';
 import { buildAndroidIconAssets, buildPwaIconAssets } from './iconRenderer';
+import { isFcmReady } from './fcm';
 
 /** Keeps line endings correct when the project is pushed from Windows/macOS. */
 const GITATTRIBUTES = `* text=auto
@@ -52,12 +55,14 @@ export {
   generateAppBuildGradle,
   generateAppBuildGradle as generateBuildGradle,
   generateColorsXml,
+  generateFcmServiceKt,
   generateGitHubActionsWorkflow,
   generateGitignore,
   generateGradleProperties,
   generateKeystoreReadme,
   generateMainActivityKt,
   generateNetworkSecurityConfig,
+  generateNotificationIconXml,
   generateProguardRules,
   generateProjectReadme,
   generateProjectReadme as generateReadmeMd,
@@ -259,6 +264,13 @@ export function generateRemoteConfigJson(config: AppConfig): string {
       dataSync: config.dataSync,
       notifications: config.notifications,
       downloads: config.downloads,
+      fcm: config.fcm
+        ? {
+            enabled: config.fcm.enabled,
+            topic: config.fcm.topic,
+            showTokenInSettings: config.fcm.showTokenInSettings,
+          }
+        : null,
       admob: config.admob,
     },
     null,
@@ -325,6 +337,13 @@ export function generateAppHtml(config: AppConfig): string {
     dataSync: config.dataSync,
     notifications: config.notifications,
     downloads: config.downloads,
+    fcm: config.fcm
+      ? {
+          enabled: config.fcm.enabled,
+          topic: config.fcm.topic,
+          showTokenInSettings: config.fcm.showTokenInSettings,
+        }
+      : null,
     admob: config.admob,
     topBarTitle: config.topBar.title,
   });
@@ -1595,9 +1614,27 @@ export function generateAppHtml(config: AppConfig): string {
       if (DATA.notifications && DATA.notifications.enabled && DATA.notifications.useSystemNotifications) {
         links += '<button class="btn-ghost" id="enable-notifications" type="button" style="margin-bottom:8px;">Allow device notifications</button>';
       }
+      var pushStatus = '';
+      if (DATA.fcm && DATA.fcm.enabled) {
+        var pushToken = '';
+        try {
+          pushToken = (window.AndroidBridge && window.AndroidBridge.getFcmToken)
+            ? String(window.AndroidBridge.getFcmToken() || '')
+            : '';
+        } catch (error) { pushToken = ''; }
+        var tokenLine = DATA.fcm.showTokenInSettings
+          ? '<div class="settings-value" style="word-break:break-all;text-align:left;font-size:10px;">' +
+            escapeHtml(pushToken || 'Waiting for Firebase…') + '</div>'
+          : '';
+        pushStatus = '<div class="settings-group"><div class="settings-label">Push notifications</div>' +
+          '<p style="font-size:11px;color:var(--muted);line-height:1.5;">Firebase Cloud Messaging · topic ' +
+          escapeHtml(DATA.fcm.topic || 'all') + '</p>' + tokenLine + '</div>';
+      }
       var html = themeButtons + fontButtons + sizeGroup +
         (links ? '<div class="settings-group"><div class="settings-label">More</div>' + links + '</div>' : '') +
-        '<p style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px;">' +
+        pushStatus +
+        '<p style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px;">' +
+        'Offline copy embedded · no expiry<br>' +
         escapeHtml(DATA.name) + ' v' + escapeHtml(DATA.version) + '</p>';
       openSheet('App settings', html);
 
@@ -2118,6 +2155,7 @@ export async function buildAndroidProjectFiles(
 ): Promise<ProjectFile[]> {
   const includeSigning = options.includeSigning !== false;
   const packagePath = (config.appPackageId || 'com.example.app').replace(/\./g, '/');
+  const fcmReady = isFcmReady(config);
 
   // Loaded on demand so the studio's initial bundle stays small.
   const {
@@ -2130,7 +2168,7 @@ export async function buildAndroidProjectFiles(
 
   const files: ProjectFile[] = [
     { path: 'settings.gradle', content: generateSettingsGradle(config) },
-    { path: 'build.gradle', content: generateRootBuildGradle() },
+    { path: 'build.gradle', content: generateRootBuildGradle(config) },
     { path: 'gradle.properties', content: generateGradleProperties(config, includeSigning) },
     { path: 'gradlew', content: base64ToText(GRADLEW_SH_BASE64) },
     { path: 'gradlew.bat', content: base64ToText(GRADLEW_BAT_BASE64) },
@@ -2159,6 +2197,20 @@ export async function buildAndroidProjectFiles(
       content: generateRemoteConfigJson(config),
     },
   ];
+
+  if (fcmReady) {
+    files.push(
+      { path: 'app/google-services.json', content: config.fcm?.googleServicesJson || '' },
+      {
+        path: `app/src/main/java/${packagePath}/AppFirebaseMessagingService.kt`,
+        content: generateFcmServiceKt(config),
+      },
+      {
+        path: 'app/src/main/res/drawable/ic_notification.xml',
+        content: generateNotificationIconXml(),
+      }
+    );
+  }
 
   // Real PNG launcher icons rendered from the uploaded logo / brand colours.
   const iconAssets = await buildAndroidIconAssets(config);

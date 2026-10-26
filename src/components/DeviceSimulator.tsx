@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { AppConfig, LaunchpadIconItem, MenuItem, SubmenuLink } from '../types/appConfig';
 import { renderAppIcon } from '../utils/iconMap';
+import { isFcmReady, resolvedFcm } from '../utils/fcm';
 import {
   RotateCw,
   RefreshCw,
@@ -1358,6 +1359,33 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                         </p>
                       )}
                   </div>
+
+                  {config.fcm?.enabled && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Push notifications
+                      </p>
+                      <div
+                        className={`rounded-xl border p-2.5 text-[11px] ${
+                          isFcmReady(config)
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-amber-200 bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        <p className="font-semibold">
+                          {isFcmReady(config) ? 'Firebase Cloud Messaging ready' : 'FCM needs a valid google-services.json'}
+                        </p>
+                        <p className="mt-0.5">
+                          Topic: <code>{resolvedFcm(config).topic || 'all'}</code> · delivered while
+                          the app is closed
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-slate-400 text-center pt-1 border-t border-slate-100">
+                    Offline copy embedded · no expiry · {config.appName} v{config.versionName}
+                  </p>
                 </div>
               </div>
             )}

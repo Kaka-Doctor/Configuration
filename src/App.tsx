@@ -15,6 +15,7 @@ import { AndroidSdkEditor } from './components/editor/AndroidSdkEditor';
 import { AdMobEditor } from './components/editor/AdMobEditor';
 import { KeystoreEditor } from './components/editor/KeystoreEditor';
 import { PhoneTestModal } from './components/editor/PhoneTestModal';
+import { DeployEditor } from './components/editor/DeployEditor';
 import {
   Smartphone,
   Sparkles,
@@ -33,6 +34,7 @@ import {
   DollarSign,
   Key,
   SlidersHorizontal,
+  Rocket,
 } from 'lucide-react';
 
 type StudioTab =
@@ -44,7 +46,8 @@ type StudioTab =
   | 'features'
   | 'sdk'
   | 'admob'
-  | 'keystore';
+  | 'keystore'
+  | 'deploy';
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(() => {
@@ -181,6 +184,7 @@ export default function App() {
               { id: 'sdk', label: 'SDK & Versions', icon: Cpu },
               { id: 'admob', label: 'AdMob Ads', icon: DollarSign },
               { id: 'keystore', label: 'Keystore & Signing', icon: Key },
+              { id: 'deploy', label: 'Deploy', icon: Rocket },
             ].map((tab) => {
               const IconComp = tab.icon;
               const isActive = activeTab === tab.id;
@@ -230,6 +234,7 @@ export default function App() {
             {activeTab === 'keystore' && (
               <KeystoreEditor config={config} onChange={setConfig} />
             )}
+            {activeTab === 'deploy' && <DeployEditor config={config} />}
           </div>
 
           {/* Quick Actions & Reset Bar */}

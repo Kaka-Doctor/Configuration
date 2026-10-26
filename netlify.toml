@@ -7,6 +7,12 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Server-side deploy relay (one-click APK/AAB build). The GitHub token lives
+# only in Netlify environment variables, never in the browser bundle.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # Single Page Application fallback so the studio keeps working on any URL,
 # including deep links like /?tab=sdk and browser refreshes.
 [[redirects]]
@@ -14,7 +20,8 @@
   to = "/index.html"
   status = 200
 
-# The studio is a pure static client-side app; no server functions are required.
+# The studio itself is a static client-side app. The only server code is the
+# optional one-click deploy relay in netlify/functions/deploy.mjs.
 [[headers]]
   for = "/sw.js"
   [headers.values]

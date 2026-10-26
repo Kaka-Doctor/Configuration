@@ -159,6 +159,22 @@ export interface NotificationSettings {
   useSystemNotifications: boolean;
 }
 
+/**
+ * Optional Firebase Cloud Messaging for the installed Android app.
+ * The Google services file is stored in the design (not in exported public
+ * repos) and is only compiled into the APK when it is valid for the app's
+ * package id.
+ */
+export interface FcmConfig {
+  enabled: boolean;
+  /** Full contents of google-services.json from the Firebase console. */
+  googleServicesJson: string;
+  /** Topic every install subscribes to (defaults to `all`). */
+  topic: string;
+  /** Show the device's FCM token in the in-app settings sheet (useful for tests). */
+  showTokenInSettings: boolean;
+}
+
 export interface AppConfig {
   appName: string;
   shortName: string;
@@ -295,6 +311,8 @@ export interface AppConfig {
   pages?: AppPagesConfig;
   dataSync?: DataSyncConfig;
   notifications?: NotificationSettings;
+  /** Optional Firebase Cloud Messaging (closed-app push) for Android. */
+  fcm?: FcmConfig;
   /** When true, downloaded files are saved by the app instead of opening a browser. */
   downloads?: {
     enabled: boolean;

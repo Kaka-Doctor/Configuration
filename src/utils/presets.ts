@@ -101,6 +101,13 @@ export const DEFAULT_DOWNLOADS: NonNullable<AppConfig['downloads']> = {
   inAppBrowser: true,
 };
 
+export const DEFAULT_FCM: NonNullable<AppConfig['fcm']> = {
+  enabled: false,
+  googleServicesJson: '',
+  topic: 'all',
+  showTokenInSettings: false,
+};
+
 /** Fills in every new section so old saved designs keep working. */
 export function withAppDefaults(config: AppConfig): AppConfig {
   const splash = config.splashScreen || ({} as AppConfig['splashScreen']);
@@ -144,6 +151,7 @@ export function withAppDefaults(config: AppConfig): AppConfig {
     dataSync: { ...DEFAULT_DATA_SYNC, ...(config.dataSync || {}) },
     notifications: { ...DEFAULT_NOTIFICATIONS, ...(config.notifications || {}) },
     downloads: { ...DEFAULT_DOWNLOADS, ...(config.downloads || {}) },
+    fcm: { ...DEFAULT_FCM, ...(config.fcm || {}) },
   };
 }
 

@@ -1,5 +1,6 @@
 import type { AppConfig, KeystoreConfig } from '../types/appConfig';
 import { hasUsableKeystore, safeKeystoreFileName } from './keystoreGenerator';
+import { fcmDetailsFor, isFcmReady, resolvedFcm, sanitizeFcmTopic } from './fcm';
 
 /**
  * Native Android project generators.
@@ -83,12 +84,13 @@ include ':app'
 `;
 }
 
-export function generateRootBuildGradle(): string {
+export function generateRootBuildGradle(config?: AppConfig): string {
+  const fcmReady = config ? isFcmReady(config) : false;
   return `// Top-level build file — plugin versions are declared here and reused by :app
 plugins {
     id 'com.android.application' version '${AGP_VERSION}' apply false
     id 'org.jetbrains.kotlin.android' version '${KOTLIN_VERSION}' apply false
-}
+${fcmReady ? "    id 'com.google.gms.google-services' version '4.4.2' apply false\n" : ''}}
 
 tasks.register('clean', Delete) {
     delete rootProject.layout.buildDirectory
@@ -100,11 +102,12 @@ export function generateAppBuildGradle(config: AppConfig): string {
   const sdk = config.androidSdk;
   const proguard = Boolean(sdk.enableProGuard);
   const namespace = gradleString(config.appPackageId);
+  const fcmReady = isFcmReady(config);
 
   return `plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-}
+${fcmReady ? "    id 'com.google.gms.google-services'\n" : ''}}
 
 // Signing is only used when all release values are present AND the keystore
 // file really exists. Otherwise the release build uses the debug key, so the
@@ -173,7 +176,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
 ${config.admob?.enabled ? "    implementation 'com.google.android.gms:play-services-ads:23.6.0'" : "    // AdMob disabled — no ads dependency needed"}
-}
+${fcmReady ? "    implementation 'com.google.firebase:firebase-messaging:24.1.1'\n" : ''}}
 `;
 }
 
@@ -220,6 +223,8 @@ zipStorePath=wrapper/dists
 
 export function generateAndroidManifestXml(config: AppConfig): string {
   const p = config.androidSdk.permissions;
+  const fcmReady = isFcmReady(config);
+  const fcmConfig = resolvedFcm(config);
   const permissions: string[] = [];
   permissions.push('<uses-permission android:name="android.permission.INTERNET" />');
   if (p.networkState) permissions.push('<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />');
@@ -232,7 +237,7 @@ export function generateAndroidManifestXml(config: AppConfig): string {
     // Downloads folder without it on Android 10+.
     permissions.push('<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />');
   }
-  if (p.notifications || config.notifications?.enabled) {
+  if (p.notifications || config.notifications?.enabled || fcmConfig.enabled) {
     permissions.push('<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
   }
   if (p.wakeLock) permissions.push('<uses-permission android:name="android.permission.WAKE_LOCK" />');
@@ -271,13 +276,22 @@ ${admobMeta}
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|uiMode"${orientation}>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity>${fcmReady ? `
+        <!-- Closed-app push notifications from Firebase Cloud Messaging. -->
+        <service
+            android:name=".AppFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>` : ''}
     </application>
 
 </manifest>
@@ -293,8 +307,11 @@ export function generateMainActivityKt(config: AppConfig): string {
   const appUrl =
     isWebsite && /^https?:\/\//i.test(websiteUrl) ? websiteUrl : 'file:///android_asset/index.html';
   const adsEnabled = Boolean(config.admob?.enabled);
+  const fcmConfig = resolvedFcm(config);
+  const fcmReady = isFcmReady(config);
+  const fcmTopic = sanitizeFcmTopic(fcmConfig.topic || 'all');
   const notificationsEnabled = Boolean(
-    config.notifications?.enabled || config.androidSdk.permissions.notifications
+    config.notifications?.enabled || config.androidSdk.permissions.notifications || fcmReady
   );
   const downloadsEnabled = config.downloads?.enabled !== false;
 
@@ -487,6 +504,69 @@ import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
     ? '        requestNotificationPermissionIfNeeded()\n'
     : '';
 
+  const fcmImports = fcmReady
+    ? 'import com.google.firebase.messaging.FirebaseMessaging\n'
+    : '';
+
+  const fcmInit = fcmReady
+    ? `
+        // Firebase Cloud Messaging: cached token + topic subscription.
+        initFirebaseMessaging()
+        handlePushIntent(intent)
+`
+    : '';
+
+  const fcmMethods = fcmReady
+    ? `
+    private fun initFirebaseMessaging() {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val token = task.result ?: ""
+                getSharedPreferences(PUSH_PREFS, MODE_PRIVATE)
+                    .edit().putString("token", token).apply()
+            }
+        }
+        if (FCM_TOPIC.isNotBlank()) {
+            FirebaseMessaging.getInstance().subscribeToTopic(FCM_TOPIC)
+        }
+    }
+
+    /** Opens the destination carried by a notification tap. */
+    private fun handlePushIntent(intent: Intent?) {
+        val target = intent?.getStringExtra("push_url")?.trim().orEmpty()
+        if (target.startsWith("http")) webView.loadUrl(target)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePushIntent(intent)
+    }
+`
+    : '';
+
+  const bridgeFcmMethods = fcmReady
+    ? `
+        @JavascriptInterface
+        fun getFcmToken(): String =
+            getSharedPreferences(PUSH_PREFS, MODE_PRIVATE).getString("token", "").orEmpty()
+
+        @JavascriptInterface
+        fun subscribeToPushTopic(topic: String) {
+            val clean = topic.trim()
+            if (clean.isNotEmpty()) {
+                runOnUiThread { FirebaseMessaging.getInstance().subscribeToTopic(clean) }
+            }
+        }
+`
+    : '';
+
+  const fcmTopicConst = fcmReady
+    ? `        private const val FCM_TOPIC = "${kotlinString(fcmTopic)}"
+        private const val PUSH_PREFS = "appcraft_push"
+`
+    : '';
+
   const destroyAds = adsEnabled
     ? '        if (::adView.isInitialized) adView.destroy()\n'
     : '';
@@ -520,7 +600,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-${adImports}
+${fcmImports}${adImports}
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
@@ -533,7 +613,7 @@ ${adFields}
         createNotificationChannel()
         setupWebView()
         setupBackNavigation()
-${notificationPermission}${adInit}    }
+${fcmInit}${notificationPermission}${adInit}    }
 
     private fun setupWebView() {
         val settings = webView.settings
@@ -693,7 +773,7 @@ ${notificationPermission}${adInit}    }
             }
         })
     }
-${adMethods}
+${fcmMethods}${adMethods}
     override fun onDestroy() {
 ${destroyAds}        webView.destroy()
         super.onDestroy()
@@ -745,7 +825,7 @@ ${destroyAds}        webView.destroy()
         fun notify(title: String, body: String) {
             runOnUiThread { postNotification(title, body) }
         }
-${bridgeAdMethods}    }
+${bridgeFcmMethods}${bridgeAdMethods}    }
 
     companion object {
         private const val APP_URL = "${kotlinString(appUrl)}"
@@ -754,12 +834,120 @@ ${bridgeAdMethods}    }
         private const val INTERSTITIAL_EVERY = ${interstitialEvery}
         private const val APP_OPEN_EVERY = ${appOpenEvery}
         private const val DOWNLOADS_ENABLED = ${downloadsEnabled}
-    }
+${fcmTopicConst}    }
 }
 `;
 
 }
 /* ------------------------------- Resources -------------------------------- */
+
+/** FirebaseMessagingService that posts closed-app notifications and opens URLs. */
+export function generateFcmServiceKt(config: AppConfig): string {
+  const packageName = config.appPackageId || 'com.example.app';
+  const topic = sanitizeFcmTopic(resolvedFcm(config).topic || 'all');
+  return `package ${packageName}
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+
+/**
+ * Receives Firebase Cloud Messaging pushes while the app is backgrounded or
+ * closed. The notification opens MainActivity; a data.url value is loaded in
+ * the app after the tap.
+ */
+class AppFirebaseMessagingService : FirebaseMessagingService() {
+
+    override fun onNewToken(token: String) {
+        getSharedPreferences(PUSH_PREFS, MODE_PRIVATE).edit().putString("token", token).apply()
+        if (TOPIC.isNotBlank()) {
+            FirebaseMessaging.getInstance().subscribeToTopic(TOPIC)
+        }
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        val title = message.notification?.title
+            ?: message.data["title"]
+            ?: getString(R.string.app_name)
+        val body = message.notification?.body
+            ?: message.data["body"]
+            ?: message.data["message"]
+            ?: ""
+        val target = message.data["url"].orEmpty()
+
+        createChannel()
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (target.isNotBlank()) putExtra("push_url", target)
+        }
+        val pending = PendingIntent.getActivity(
+            this,
+            System.currentTimeMillis().toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title.ifBlank { getString(R.string.app_name) })
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            .build()
+
+        val allowed = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (allowed) {
+            NotificationManagerCompat.from(this)
+                .notify(System.currentTimeMillis().toInt(), notification)
+        }
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "App updates",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Messages sent by the app owner"
+        }
+        manager.createNotificationChannel(channel)
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "appcraft_updates"
+        private const val PUSH_PREFS = "appcraft_push"
+        private const val TOPIC = "${kotlinString(topic)}"
+    }
+}
+`;
+}
+
+/** Monochrome status-bar icon used by FCM notifications. */
+export function generateNotificationIconXml(): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
+</vector>
+`;
+}
 
 export function generateActivityLayout(config: AppConfig): string {
   const adsEnabled = Boolean(config.admob?.enabled);
@@ -1048,6 +1236,20 @@ after the app is verified.`
     : `## AdMob
 AdMob is disabled for this app.`;
 
+  const fcmSection = config.fcm?.enabled
+    ? `## Firebase Cloud Messaging
+The project includes \`app/google-services.json\`, the Google Services Gradle
+plugin and \`AppFirebaseMessagingService\`. Shows notifications while the app is
+closed. Topic: \`${resolvedFcm(config).topic || 'all'}\`.
+
+Send a message from **Firebase Console → Messaging** to that topic (or to the
+device token shown in the app settings). A \`url\` data value opens that page
+when the notification is tapped. FCM is only compiled in when the package name
+inside google-services.json matches \`${config.appPackageId}\`.`
+    : `## Firebase Cloud Messaging
+FCM is not enabled. Add google-services.json in **App Features → Firebase Cloud
+Messaging** if you want closed-app push notifications.`;
+
   return `# ${config.appName} — Android + PWA
 
 Complete, buildable source for **${config.appName}**, generated with AppCraft Studio.
@@ -1180,8 +1382,25 @@ The app polls the notification feed URL (a JSON array or
 \`{ "notifications": [...] }\`) and shows an in-app badge + inbox. On Android the
 generated \`AndroidBridge.notify()\` also posts a real system notification. The
 app must be open (or running in the background) to receive them — a browser /
-WebView cannot receive push messages while fully closed without a push service
-(Firebase Cloud Messaging). Add FCM later if you need closed-app push.
+WebView cannot receive push messages while fully closed without a push service.
+
+${fcmSection}
+
+### Lifetime and offline behaviour
+
+- **No expiry:** the generated code has no trial timer, expiry date or remote
+  kill switch. An installed APK keeps working even if the studio or the live
+  feed disappears.
+- **Offline copy:** the full UI and content ship inside the APK (\`index.html\`)
+  and the PWA service worker caches the shell. If \`app-config.json\` cannot be
+  fetched, the app deliberately keeps the embedded copy and makes no error.
+- **Permanent download:** GitHub **Releases** (used by the workflow) do not
+  expire. Workflow **Artifacts** are deleted after 30 days, so share the
+  Releases link, not the artifact link.
+- **Signing key:** keep your keystore and passwords. Losing them does not stop
+  the installed app; it only prevents publishing updates under the same listing.
+- **Hosting:** the APK does not depend on Netlify/Vercel staying online. Only
+  live content updates need the feed; the app itself is self-contained.
 
 ---
 

@@ -25,6 +25,8 @@ import {
 } from './keystoreGenerator.ts';
 import { apkFileName, apkReleaseUrl, parseRepoSlug } from './exportService.ts';
 import { DEFAULT_IN_APP_SETTINGS, DEFAULT_NOTIFICATIONS, DEFAULT_APP_CONFIG } from './presets.ts';
+import { isFcmReady, parseGoogleServicesJson } from './fcm.ts';
+import { generateRelayWorkflow } from './deployRelay.ts';
 
 test('generateManifestJson generates valid PWA manifest fields', () => {
   const manifest = generateManifestJson(DEFAULT_APP_CONFIG);
@@ -614,4 +616,155 @@ test('GitHub export ships the live config feed and explains live sync', async ()
   const readme = await zip.file('README.md')!.async('string');
   assert.ok(readme.includes('Live content updates (no rebuild)'), 'documents live updates');
   assert.ok(readme.includes('raw.githubusercontent.com'), 'shows the absolute feed URL to use');
+});
+
+/* --------------------------- Firebase Cloud Messaging --------------------- */
+
+const VALID_GOOGLE_SERVICES = JSON.stringify({
+  project_info: {
+    project_number: '123456789012',
+    project_id: 'appcraft-test',
+    storage_bucket: 'appcraft-test.appspot.com',
+  },
+  client: [
+    {
+      client_info: {
+        mobilesdk_app_id: '1:123456789012:android:abcdef123456',
+        android_client_info: { package_name: 'com.apex.portal' },
+      },
+      api_key: [{ current_key: 'AIzaSyTestKeyForValidationOnly1234567' }],
+    },
+  ],
+  configuration_version: '1',
+});
+
+const fcmConfig = {
+  ...DEFAULT_APP_CONFIG,
+  fcm: {
+    enabled: true,
+    googleServicesJson: VALID_GOOGLE_SERVICES,
+    topic: 'news-updates',
+    showTokenInSettings: true,
+  },
+};
+
+test('google-services.json is validated and must match the app package', () => {
+  const ok = parseGoogleServicesJson(VALID_GOOGLE_SERVICES, 'com.apex.portal');
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.details.projectId, 'appcraft-test');
+    assert.equal(ok.details.packageName, 'com.apex.portal');
+  }
+
+  const mismatch = parseGoogleServicesJson(VALID_GOOGLE_SERVICES, 'com.other.app');
+  assert.equal(mismatch.ok, false);
+  if (!mismatch.ok) assert.match(mismatch.error, /com\.apex\.portal/);
+
+  assert.equal(parseGoogleServicesJson('{ not json', 'com.apex.portal').ok, false);
+
+  const serviceAccount = JSON.stringify({
+    type: 'service_account',
+    project_id: 'x',
+    private_key: '-----BEGIN PRIVATE KEY-----',
+    client_email: 'firebase@x.iam.gserviceaccount.com',
+  });
+  const rejected = parseGoogleServicesJson(serviceAccount, 'com.apex.portal');
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.match(rejected.error, /service-account/i);
+
+  assert.equal(isFcmReady(DEFAULT_APP_CONFIG), false, 'FCM is off by default');
+  assert.equal(isFcmReady(fcmConfig), true, 'valid file + enabled = ready');
+});
+
+test('FCM is compiled into Gradle, manifest and Kotlin only when ready', async () => {
+  const readyFiles = await buildAndroidProjectFiles(fcmConfig, { includeSigning: false });
+  const byPath = (path: string) => readyFiles.find((file) => file.path === path)?.content as string;
+
+  assert.ok(byPath('build.gradle').includes('com.google.gms.google-services'), 'root plugin');
+  assert.ok(byPath('app/build.gradle').includes("id 'com.google.gms.google-services'"), 'app plugin');
+  assert.ok(
+    byPath('app/build.gradle').includes('firebase-messaging'),
+    'Firebase Messaging dependency'
+  );
+  assert.ok(
+    byPath('app/src/main/AndroidManifest.xml').includes('AppFirebaseMessagingService'),
+    'messaging service is registered'
+  );
+  assert.ok(
+    byPath('app/src/main/AndroidManifest.xml').includes('MESSAGING_EVENT'),
+    'service handles MESSAGING_EVENT'
+  );
+  assert.ok(byPath('app/google-services.json').includes('com.apex.portal'), 'file is shipped');
+  assert.ok(
+    byPath('app/src/main/java/com/apex/portal/AppFirebaseMessagingService.kt').includes(
+      'FirebaseMessagingService'
+    ),
+    'service source is generated'
+  );
+  assert.ok(byPath('app/src/main/res/drawable/ic_notification.xml').includes('<vector'), 'icon');
+  assert.ok(
+    byPath('app/src/main/java/com/apex/portal/MainActivity.kt').includes('subscribeToTopic'),
+    'MainActivity subscribes to the configured topic'
+  );
+
+  const disabledFiles = await buildAndroidProjectFiles(DEFAULT_APP_CONFIG);
+  const disabled = (path: string) =>
+    disabledFiles.find((file) => file.path === path)?.content as string;
+  assert.equal(disabledFiles.some((file) => file.path === 'app/google-services.json'), false);
+  assert.equal(
+    disabledFiles.some((file) => file.path.endsWith('AppFirebaseMessagingService.kt')),
+    false
+  );
+  assert.ok(
+    !disabled('app/build.gradle').includes('com.google.gms.google-services'),
+    'Gradle still builds without Firebase'
+  );
+  assert.ok(
+    !disabled('app/src/main/AndroidManifest.xml').includes('AppFirebaseMessagingService'),
+    'no orphan service in the manifest'
+  );
+});
+
+/* ------------------------------ Deploy relay ------------------------------ */
+
+test('relay workflow builds, publishes a permanent release and deletes the branch', () => {
+  const workflow = generateRelayWorkflow();
+  assert.ok(workflow.includes('workflow_dispatch'), 'triggered by the deploy function');
+  assert.ok(workflow.includes('inbox/app.zip'), 'reads the uploaded archive');
+  assert.ok(workflow.includes('assembleDebug') && workflow.includes('bundleRelease'), 'APK + AAB');
+  assert.ok(workflow.includes('platforms;android-36'), 'targets SDK 36');
+  assert.ok(workflow.includes('softprops/action-gh-release'), 'publishes a release');
+  assert.ok(workflow.includes('tag_name: appcraft-${{ env.DEPLOY_ID }}'), 'stable release tag');
+  assert.ok(workflow.includes('git push origin --delete'), 'cleans the throwaway branch');
+  assert.ok(workflow.includes('if: always()'), 'cleanup runs even after a failed build');
+  assert.ok(workflow.includes('run-name: AppCraft build'), 'polling can find the run');
+});
+
+test('deploy archive never contains signing material or secrets', async () => {
+  const config = {
+    ...fcmConfig,
+    keystore: {
+      ...DEFAULT_KEYSTORE_CONFIG,
+      mode: 'upload' as const,
+      isCustomUploaded: true,
+      fileName: 'release.keystore',
+      storePassword: 'store-secret',
+      keyPassword: 'key-secret',
+      uploadedBase64: Buffer.from(new Uint8Array([0x30, 0x82, 0x00, 0x01])).toString('base64'),
+    },
+  };
+  const blob = await createGitHubRepoZip(config);
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const names = Object.keys(zip.files);
+
+  assert.equal(
+    names.some((name) => /\.(keystore|jks)$/i.test(name)),
+    false,
+    'no keystore in the relay upload'
+  );
+  const props = await zip.file('gradle.properties')!.async('string');
+  assert.ok(!props.includes('store-secret'), 'no signing passwords');
+  assert.ok(!props.includes('key-secret'), 'no key passwords');
+  assert.ok(zip.file('app/google-services.json'), 'FCM file is included when configured');
 });
