@@ -29,11 +29,125 @@ export const DEFAULT_ADMOB_CONFIG: AppConfig['admob'] = {
   rewardedUnitId: 'ca-app-pub-3940256099942544/5224354917',
   nativeUnitId: 'ca-app-pub-3940256099942544/2247696110',
   bannerPosition: 'bottom',
+  bannerSize: 'adaptive',
   showBannerInSimulator: true,
   interstitialFrequencySeconds: 60,
+  interstitialEveryClicks: 5,
+  appOpenEveryLaunches: 5,
+  enableRewardedAds: true,
+  enableNativeAds: true,
 };
 
-export const PRESET_TEMPLATES: { id: string; name: string; tag: string; description: string; config: AppConfig }[] = [
+/** Feature defaults shared by every preset and by older saved configs. */
+export const DEFAULT_SHARE_CONFIG: NonNullable<AppConfig['share']> = {
+  title: 'Share this app',
+  message: 'Check out this app — it works right on your phone.',
+  url: '',
+  useTypedMessage: true,
+};
+
+export const DEFAULT_IN_APP_SETTINGS: NonNullable<AppConfig['inAppSettings']> = {
+  enabled: true,
+  showInTopBar: true,
+  defaultTheme: 'light',
+  allowThemeChange: true,
+  defaultFont: 'system',
+  allowFontChange: true,
+  defaultFontScale: 1,
+  allowFontScale: true,
+};
+
+export const DEFAULT_PAGES: NonNullable<AppConfig['pages']> = {
+  about: {
+    enabled: true,
+    title: 'About this app',
+    content:
+      'This application was created with AppCraft Studio. Use it to reach your services, documents and updates in one place.',
+  },
+  rate: {
+    enabled: true,
+    title: 'Rate this app',
+    message: 'Enjoying the app? A quick rating helps a lot.',
+    url: '',
+  },
+  privacy: {
+    enabled: true,
+    title: 'Privacy policy',
+    content:
+      'This app does not sell personal data. Settings and text you type are stored on your device. Links you open are governed by the privacy policies of the sites you visit. Contact the app owner for data requests.',
+  },
+};
+
+export const DEFAULT_DATA_SYNC: NonNullable<AppConfig['dataSync']> = {
+  enabled: false,
+  configUrl: '',
+  refreshSeconds: 120,
+  notificationsUrl: '',
+  requestNotificationPermission: false,
+};
+
+export const DEFAULT_NOTIFICATIONS: NonNullable<AppConfig['notifications']> = {
+  enabled: false,
+  title: 'Announcements',
+  message: 'New content is available in the app.',
+  feedUrl: '',
+  pollSeconds: 120,
+  showBellInTopBar: true,
+  useSystemNotifications: false,
+};
+
+export const DEFAULT_DOWNLOADS: NonNullable<AppConfig['downloads']> = {
+  enabled: true,
+  inAppBrowser: true,
+};
+
+/** Fills in every new section so old saved designs keep working. */
+export function withAppDefaults(config: AppConfig): AppConfig {
+  const splash = config.splashScreen || ({} as AppConfig['splashScreen']);
+  const nav = config.navigation || ({} as AppConfig['navigation']);
+  const admob = { ...DEFAULT_ADMOB_CONFIG, ...(config.admob || {}) };
+  const sdk = {
+    ...DEFAULT_ANDROID_SDK,
+    ...(config.androidSdk || {}),
+    permissions: { ...DEFAULT_ANDROID_SDK.permissions, ...(config.androidSdk?.permissions || {}) },
+  };
+  if (sdk.compileSdk < 36) sdk.compileSdk = 36;
+  if (sdk.targetSdk < 36) sdk.targetSdk = 36;
+
+  return {
+    ...config,
+    androidSdk: sdk,
+    admob: {
+      ...admob,
+      interstitialEveryClicks: Math.min(20, Math.max(3, admob.interstitialEveryClicks ?? 5)),
+      appOpenEveryLaunches: Math.min(10, Math.max(1, admob.appOpenEveryLaunches ?? 5)),
+    },
+    splashScreen: {
+      ...splash,
+      layout: splash.layout || (splash.customImageUrl ? 'image-center' : 'logo-center'),
+      imageBorderColor: splash.imageBorderColor || '#ffffff',
+      imageBorderWidth: splash.imageBorderWidth ?? 4,
+      imageRadius: splash.imageRadius ?? 24,
+    },
+    navigation: {
+      ...nav,
+      items: nav.items || [],
+      bottomNavItems: nav.bottomNavItems || [],
+    },
+    share: { ...DEFAULT_SHARE_CONFIG, ...(config.share || {}) },
+    inAppSettings: { ...DEFAULT_IN_APP_SETTINGS, ...(config.inAppSettings || {}) },
+    pages: {
+      about: { ...DEFAULT_PAGES.about, ...(config.pages?.about || {}) },
+      rate: { ...DEFAULT_PAGES.rate, ...(config.pages?.rate || {}) },
+      privacy: { ...DEFAULT_PAGES.privacy, ...(config.pages?.privacy || {}) },
+    },
+    dataSync: { ...DEFAULT_DATA_SYNC, ...(config.dataSync || {}) },
+    notifications: { ...DEFAULT_NOTIFICATIONS, ...(config.notifications || {}) },
+    downloads: { ...DEFAULT_DOWNLOADS, ...(config.downloads || {}) },
+  };
+}
+
+const RAW_PRESET_TEMPLATES: { id: string; name: string; tag: string; description: string; config: AppConfig }[] = [
   {
     id: 'launchpad-portal',
     name: 'Enterprise Web Portal',
@@ -637,5 +751,11 @@ export const PRESET_TEMPLATES: { id: string; name: string; tag: string; descript
     },
   },
 ];
+
+export const PRESET_TEMPLATES: { id: string; name: string; tag: string; description: string; config: AppConfig }[] =
+  RAW_PRESET_TEMPLATES.map((template) => ({
+    ...template,
+    config: withAppDefaults(template.config),
+  }));
 
 export const DEFAULT_APP_CONFIG: AppConfig = PRESET_TEMPLATES[0].config;

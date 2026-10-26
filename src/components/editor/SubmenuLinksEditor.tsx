@@ -12,12 +12,14 @@ import {
   ChevronUp,
   ChevronDown,
   FolderTree,
+  Info,
 } from 'lucide-react';
 
 interface SubmenuLinksEditorProps {
   links?: SubmenuLink[];
   onChange: (links: SubmenuLink[]) => void;
   accent?: 'indigo' | 'pink';
+  depth?: number;
 }
 
 const ACTION_ICON: Record<SubmenuLink['actionType'], string> = {
@@ -25,27 +27,45 @@ const ACTION_ICON: Record<SubmenuLink['actionType'], string> = {
   'html-page': 'FileText',
   share: 'Share2',
   contact: 'Mail',
+  about: 'Info',
+  submenu: 'FolderTree',
 };
 
 function newLink(index: number): SubmenuLink {
   return {
-    id: `sm-${Date.now()}-${index}`,
+    id: `sm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     label: `Submenu Link ${index + 1}`,
     description: '',
     icon: 'Globe',
     actionType: 'website',
     targetUrl: 'https://example.com',
+    showOnHome: true,
   };
+}
+
+function nestedDefaults(): SubmenuLink[] {
+  return [
+    {
+      id: `sm-nested-${Date.now()}-1`,
+      label: 'Nested page',
+      description: 'A page inside this section',
+      icon: 'FileText',
+      actionType: 'html-page',
+      targetHtml: '<h2>Nested content</h2><p>Add your own nested content here.</p>',
+      showOnHome: true,
+    },
+  ];
 }
 
 /**
  * Editor for a submenu: a single icon on the app's home screen or drawer that
- * opens two or more further destinations.
+ * opens two or more further destinations. Submenus can contain submenus.
  */
 export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
   links = [],
   onChange,
   accent = 'indigo',
+  depth = 0,
 }) => {
   const [iconPickerIndex, setIconPickerIndex] = useState<number | null>(null);
 
@@ -71,21 +91,26 @@ export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
 
   const activeClass = accent === 'pink' ? 'bg-pink-600 text-white' : 'bg-indigo-600 text-white';
   const borderClass = accent === 'pink' ? 'border-pink-500/50' : 'border-indigo-500/50';
+  const iconClass = accent === 'pink' ? 'text-pink-400' : 'text-indigo-400';
 
   return (
-    <div className={`rounded-xl border ${borderClass} bg-slate-900/50 p-3 space-y-3`}>
+    <div
+      className={`rounded-xl border ${borderClass} bg-slate-900/50 p-3 space-y-3 ${
+        depth > 0 ? 'mt-2' : ''
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-white">
-            <FolderTree size={15} className={accent === 'pink' ? 'text-pink-400' : 'text-indigo-400'} />
-            <span>Submenu destinations</span>
+            <FolderTree size={15} className={iconClass} />
+            <span>{depth > 0 ? `Nested submenu (level ${depth + 1})` : 'Submenu destinations'}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
               {links.length}
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-            Clicking this one icon opens a list of these places. Add at least two so it truly combines
-            sections.
+            Clicking this one icon opens a list of these places. Each entry can itself be a submenu,
+            so you can nest content as deep as you need.
           </p>
         </div>
         <button
@@ -106,7 +131,10 @@ export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
 
       <div className="space-y-2">
         {links.map((link, index) => (
-          <div key={link.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3 space-y-2.5">
+          <div
+            key={link.id}
+            className="rounded-lg border border-slate-700 bg-slate-800/60 p-3 space-y-2.5"
+          >
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -169,12 +197,14 @@ export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs"
               />
 
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-6 gap-1">
                 {[
                   { id: 'website', label: 'Web', icon: Globe },
                   { id: 'html-page', label: 'HTML', icon: FileCode },
                   { id: 'share', label: 'Share', icon: Share2 },
                   { id: 'contact', label: 'Email', icon: Mail },
+                  { id: 'about', label: 'About', icon: Info },
+                  { id: 'submenu', label: 'More', icon: FolderTree },
                 ].map((action) => {
                   const ActionIcon = action.icon;
                   const active = link.actionType === action.id;
@@ -182,22 +212,69 @@ export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
                     <button
                       key={action.id}
                       type="button"
-                      onClick={() =>
-                        updateLink(link.id, {
+                      onClick={() => {
+                        const patch: Partial<SubmenuLink> = {
                           actionType: action.id as SubmenuLink['actionType'],
                           icon: ACTION_ICON[action.id as SubmenuLink['actionType']] || link.icon,
-                        })
-                      }
-                      className={`flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition ${
+                        };
+                        if (
+                          action.id === 'submenu' &&
+                          (!link.children || link.children.length === 0)
+                        ) {
+                          patch.children = nestedDefaults();
+                        }
+                        updateLink(link.id, patch);
+                      }}
+                      className={`flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-medium transition ${
                         active ? activeClass : 'bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      <ActionIcon size={12} />
-                      <span>{action.label}</span>
+                      <ActionIcon size={11} />
+                      <span className="hidden sm:inline">{action.label}</span>
                     </button>
                   );
                 })}
               </div>
+            </div>
+
+            {/* Per-entry toggles */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+              <label className="flex items-center gap-1.5 text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={link.showOnHome !== false}
+                  onChange={(e) => updateLink(link.id, { showOnHome: e.target.checked })}
+                  className="accent-indigo-500"
+                />
+                Show on home
+              </label>
+              <label className="flex items-center gap-1.5 text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(link.openExternally)}
+                  onChange={(e) => updateLink(link.id, { openExternally: e.target.checked })}
+                  className="accent-indigo-500"
+                />
+                Open outside app
+              </label>
+              <label className="flex items-center gap-1.5 text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(link.rewardedAd)}
+                  onChange={(e) => updateLink(link.id, { rewardedAd: e.target.checked })}
+                  className="accent-amber-500"
+                />
+                Rewarded ad
+              </label>
+              <label className="flex items-center gap-1.5 text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(link.nativeAd)}
+                  onChange={(e) => updateLink(link.id, { nativeAd: e.target.checked })}
+                  className="accent-rose-500"
+                />
+                Native ad
+              </label>
             </div>
 
             {(link.actionType === 'website' || link.actionType === 'contact') && (
@@ -221,6 +298,15 @@ export const SubmenuLinksEditor: React.FC<SubmenuLinksEditorProps> = ({
                 onChange={(e) => updateLink(link.id, { targetHtml: e.target.value })}
                 placeholder="<h2>Offline page</h2><p>Content shown inside the app…</p>"
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white font-mono text-xs focus:outline-hidden"
+              />
+            )}
+
+            {link.actionType === 'submenu' && (
+              <SubmenuLinksEditor
+                links={link.children || []}
+                onChange={(children) => updateLink(link.id, { children })}
+                accent="pink"
+                depth={depth + 1}
               />
             )}
           </div>

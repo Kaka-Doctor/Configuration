@@ -242,6 +242,126 @@ export const AdMobEditor: React.FC<AdMobEditorProps> = ({ config, onChange }) =>
                 </label>
               </div>
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                Banner Size
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(
+                  [
+                    { id: 'banner', label: 'Small (320×50)' },
+                    { id: 'large-banner', label: 'Large (320×100)' },
+                    { id: 'medium-rectangle', label: 'Rectangle (300×250)' },
+                    { id: 'adaptive', label: 'Adaptive' },
+                  ] as const
+                ).map((size) => (
+                  <button
+                    key={size.id}
+                    type="button"
+                    onClick={() => updateAdMob({ bannerSize: size.id })}
+                    className={`py-2 px-2 rounded-xl text-[11px] font-medium transition ${
+                      (admob.bannerSize || 'adaptive') === size.id
+                        ? 'bg-amber-600 text-white font-semibold'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {size.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Ad formats and display frequency */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-5">
+            <h4 className="text-sm font-semibold text-white">Ad Formats & Frequency</h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700 cursor-pointer">
+                <span className="text-xs text-slate-300">
+                  Rewarded video ads
+                  <span className="block text-[10px] text-slate-500 mt-0.5">
+                    Available per menu item / card
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={admob.enableRewardedAds !== false}
+                  onChange={(e) => updateAdMob({ enableRewardedAds: e.target.checked })}
+                  className="accent-amber-500 w-4 h-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700 cursor-pointer">
+                <span className="text-xs text-slate-300">
+                  Native ads
+                  <span className="block text-[10px] text-slate-500 mt-0.5">
+                    Sponsored block inside content
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={admob.enableNativeAds !== false}
+                  onChange={(e) => updateAdMob({ enableNativeAds: e.target.checked })}
+                  className="accent-amber-500 w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-slate-300">
+                  Interstitial after every N clicks
+                </label>
+                <span className="text-xs font-bold text-amber-300">
+                  {admob.interstitialEveryClicks ?? 5}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={3}
+                max={20}
+                step={1}
+                value={admob.interstitialEveryClicks ?? 5}
+                onChange={(e) => updateAdMob({ interstitialEveryClicks: Number(e.target.value) })}
+                className="w-full accent-amber-500"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                <span>3 clicks</span>
+                <span>Default 5</span>
+                <span>20 clicks</span>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-slate-300">
+                  App-open ad after every N launches
+                </label>
+                <span className="text-xs font-bold text-amber-300">
+                  {admob.appOpenEveryLaunches ?? 5}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={admob.appOpenEveryLaunches ?? 5}
+                onChange={(e) => updateAdMob({ appOpenEveryLaunches: Number(e.target.value) })}
+                className="w-full accent-amber-500"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                <span>Every launch</span>
+                <span>Default 5</span>
+                <span>10 launches</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              The frequency is enforced in both the PWA runtime and the native Android activity, so
+              the APK does not double-count clicks.
+            </p>
           </div>
         </>
       )}

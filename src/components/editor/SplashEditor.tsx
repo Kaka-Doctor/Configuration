@@ -120,6 +120,127 @@ export const SplashEditor: React.FC<SplashEditorProps> = ({ config, onChange, on
             </div>
           </div>
 
+          {/* Presentation layout for the uploaded image */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Play size={16} className="text-emerald-400" />
+              Splash Image Layout
+            </h4>
+            <p className="text-[11px] text-slate-400">
+              Choose how the uploaded image and text are arranged on the launch screen. The same
+              layout is used in the installed PWA and in the Android project preview.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                {
+                  id: 'logo-center' as const,
+                  label: 'Logo in a rounded box',
+                  desc: 'Icon or image above the title — the classic splash.',
+                },
+                {
+                  id: 'image-center' as const,
+                  label: 'Image centred',
+                  desc: 'Show the uploaded image at a fixed size in the middle.',
+                },
+                {
+                  id: 'image-fullscreen' as const,
+                  label: 'Full-screen image',
+                  desc: 'Cover the whole screen, with title over the bottom.',
+                },
+                {
+                  id: 'image-bordered' as const,
+                  label: 'Centred with a border',
+                  desc: 'Framed image with an adjustable border and radius.',
+                },
+                {
+                  id: 'text-only' as const,
+                  label: 'Text only',
+                  desc: 'No image or icon — just the launch title and slogan.',
+                },
+              ].map((layout) => {
+                const active = (config.splashScreen.layout || 'logo-center') === layout.id;
+                return (
+                  <button
+                    key={layout.id}
+                    type="button"
+                    onClick={() => updateSplash({ layout: layout.id })}
+                    className={`p-3 rounded-xl border text-left transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-500/10'
+                        : 'border-slate-800 bg-slate-800/40 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold text-white block">{layout.label}</span>
+                    <span className="text-[10px] text-slate-400 block mt-1 leading-relaxed">
+                      {layout.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {(config.splashScreen.layout === 'image-bordered' ||
+              config.splashScreen.layout === 'image-center') && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Border colour
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={config.splashScreen.imageBorderColor || '#ffffff'}
+                      onChange={(e) => updateSplash({ imageBorderColor: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                    />
+                    <input
+                      type="text"
+                      value={config.splashScreen.imageBorderColor || '#ffffff'}
+                      onChange={(e) => updateSplash({ imageBorderColor: e.target.value })}
+                      className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white font-mono"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Border width: {config.splashScreen.imageBorderWidth ?? 4}px
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={14}
+                    step={1}
+                    value={config.splashScreen.imageBorderWidth ?? 4}
+                    onChange={(e) => updateSplash({ imageBorderWidth: Number(e.target.value) })}
+                    className="w-full accent-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Corner radius: {config.splashScreen.imageRadius ?? 24}px
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    step={2}
+                    value={config.splashScreen.imageRadius ?? 24}
+                    onChange={(e) => updateSplash({ imageRadius: Number(e.target.value) })}
+                    className="w-full accent-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {!config.splashScreen.customImageUrl && (
+              <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-2">
+                Upload a splash image below to use the image layouts. Without one the splash falls
+                back to the selected vector icon.
+              </p>
+            )}
+          </div>
+
           {/* Background & Colors */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
             <h4 className="text-sm font-semibold text-white flex items-center gap-2">

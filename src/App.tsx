@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { AppConfig } from './types/appConfig';
-import { DEFAULT_APP_CONFIG, PRESET_TEMPLATES } from './utils/presets';
+import { DEFAULT_APP_CONFIG, PRESET_TEMPLATES, withAppDefaults } from './utils/presets';
 import { DeviceSimulator } from './components/DeviceSimulator';
 import { BrandingEditor } from './components/editor/BrandingEditor';
 import { SplashEditor } from './components/editor/SplashEditor';
 import { TopBarEditor } from './components/editor/TopBarEditor';
 import { MenuEditor } from './components/editor/MenuEditor';
 import { ContentModeEditor } from './components/editor/ContentModeEditor';
+import { AppFeaturesEditor } from './components/editor/AppFeaturesEditor';
 import { TemplatesModal } from './components/editor/TemplatesModal';
 import { GitHubExportModal } from './components/editor/GitHubExportModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
@@ -31,6 +32,7 @@ import {
   Cpu,
   DollarSign,
   Key,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 type StudioTab =
@@ -39,6 +41,7 @@ type StudioTab =
   | 'topbar'
   | 'menu'
   | 'content'
+  | 'features'
   | 'sdk'
   | 'admob'
   | 'keystore';
@@ -49,21 +52,19 @@ export default function App() {
       const saved = localStorage.getItem('appcraft_config_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const targetSdk = parsed.androidSdk?.targetSdk === 35 ? 36 : (parsed.androidSdk?.targetSdk || 36);
-        const compileSdk = parsed.androidSdk?.compileSdk === 35 ? 36 : (parsed.androidSdk?.compileSdk || 36);
-        return {
+        return withAppDefaults({
           ...DEFAULT_APP_CONFIG,
           ...parsed,
           androidSdk: {
             ...DEFAULT_APP_CONFIG.androidSdk,
             ...parsed.androidSdk,
-            targetSdk,
-            compileSdk,
+            targetSdk: 36,
+            compileSdk: 36,
           },
-        };
+        });
       }
     } catch {}
-    return DEFAULT_APP_CONFIG;
+    return withAppDefaults(DEFAULT_APP_CONFIG);
   });
 
   const [activeTab, setActiveTab] = useState<StudioTab>('branding');
@@ -95,7 +96,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Studio Top Navbar */}
       <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand */}
@@ -161,18 +162,22 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Studio Body */}
-      <main className="flex-1 flex flex-col lg:flex-row max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 gap-8 items-start">
+      {/* Main Studio Body — editor and simulator scroll independently on desktop */}
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 gap-8 items-stretch">
         {/* Left Column: Visual Customizer Tabs & Controls */}
-        <div id="studio-editor-section" className="w-full lg:w-7/12 flex flex-col space-y-6">
+        <div
+          id="studio-editor-section"
+          className="w-full lg:w-7/12 flex flex-col space-y-6 lg:h-full lg:overflow-y-auto lg:pr-3 lg:pb-8"
+        >
           {/* Section Navigation Tabs */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto w-full">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-2xl w-full">
             {[
               { id: 'branding', label: 'Identity & Logo', icon: Palette },
               { id: 'splash', label: 'Splash Screen', icon: Sparkles },
               { id: 'topbar', label: 'Top App Bar', icon: LayoutTemplate },
               { id: 'menu', label: 'Menu & Navigation', icon: MenuIcon },
               { id: 'content', label: 'Main Screen View', icon: Globe },
+              { id: 'features', label: 'App Features', icon: SlidersHorizontal },
               { id: 'sdk', label: 'SDK & Versions', icon: Cpu },
               { id: 'admob', label: 'AdMob Ads', icon: DollarSign },
               { id: 'keystore', label: 'Keystore & Signing', icon: Key },
@@ -183,7 +188,7 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as StudioTab)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition flex-1 justify-center ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
                     isActive
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -212,6 +217,9 @@ export default function App() {
             )}
             {activeTab === 'content' && (
               <ContentModeEditor config={config} onChange={setConfig} />
+            )}
+            {activeTab === 'features' && (
+              <AppFeaturesEditor config={config} onChange={setConfig} />
             )}
             {activeTab === 'sdk' && (
               <AndroidSdkEditor config={config} onChange={setConfig} />
@@ -252,8 +260,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Column: Interactive Android Device Simulator */}
-        <div id="simulator-preview-section" className="w-full lg:w-5/12 flex flex-col items-center sticky top-24">
+        {/* Right Column: Interactive Android Device Simulator (own scroll area) */}
+        <div
+          id="simulator-preview-section"
+          className="w-full lg:w-5/12 flex flex-col items-center lg:h-full lg:overflow-y-auto lg:pb-8"
+        >
           <DeviceSimulator config={config} />
         </div>
       </main>
@@ -280,7 +291,7 @@ export default function App() {
       </div>
 
       {/* Footer / Hosting Help */}
-      <footer className="mt-auto border-t border-slate-800/80 bg-slate-950 py-6 px-4 text-center text-xs text-slate-500">
+      <footer className="mt-auto lg:hidden border-t border-slate-800/80 bg-slate-950 py-6 px-4 text-center text-xs text-slate-500">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-300">AppCraft Android PWA Studio</span>
@@ -314,7 +325,7 @@ export default function App() {
       <TemplatesModal
         isOpen={isTemplatesOpen}
         currentAppName={config.appName}
-        onApplyTemplate={(newConfig) => setConfig(newConfig)}
+        onApplyTemplate={(newConfig) => setConfig(withAppDefaults(newConfig))}
         onClose={() => setIsTemplatesOpen(false)}
       />
 

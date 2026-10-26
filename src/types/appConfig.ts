@@ -1,16 +1,37 @@
 export type MenuActionType = 'website' | 'html-page' | 'share' | 'about' | 'contact' | 'submenu';
 
+/** How an uploaded splash image is presented. */
+export type SplashLayout =
+  | 'logo-center'
+  | 'image-center'
+  | 'image-fullscreen'
+  | 'image-bordered'
+  | 'text-only';
+
+export type AppThemeName = 'light' | 'dark' | 'midnight' | 'emerald';
+export type AppFontFamily = 'system' | 'serif' | 'rounded' | 'mono';
+
 /** A destination inside a submenu. Submenus group two or more places together. */
 export interface SubmenuLink {
   id: string;
   label: string;
   description?: string;
   icon: string;
-  actionType: 'website' | 'html-page' | 'share' | 'contact';
+  actionType: 'website' | 'html-page' | 'share' | 'about' | 'contact' | 'submenu';
   targetUrl?: string;
   targetHtml?: string;
   badge?: string;
   customImageUrl?: string;
+  /** When true the link opens in the device browser instead of inside the app. */
+  openExternally?: boolean;
+  /** Show this entry on the app home screen (default true). */
+  showOnHome?: boolean;
+  /** Use a rewarded ad before the destination opens. */
+  rewardedAd?: boolean;
+  /** Show a native-style sponsored block inside the destination. */
+  nativeAd?: boolean;
+  /** Nested destinations make multi-level menus possible. */
+  children?: SubmenuLink[];
 }
 
 export interface MenuItem {
@@ -22,6 +43,12 @@ export interface MenuItem {
   targetHtml?: string;
   badge?: string;
   isExternal?: boolean;
+  /** When true the link opens in the device browser instead of inside the app. */
+  openExternally?: boolean;
+  /** Show this item on the app home screen (default true). */
+  showOnHome?: boolean;
+  rewardedAd?: boolean;
+  nativeAd?: boolean;
   customImageUrl?: string;
   /** Used when actionType is 'submenu'. */
   children?: SubmenuLink[];
@@ -33,13 +60,19 @@ export interface LaunchpadIconItem {
   description: string;
   icon: string;
   category: string;
-  actionType: 'website' | 'html-page' | 'submenu';
+  actionType: 'website' | 'html-page' | 'share' | 'about' | 'submenu';
   targetUrl?: string;
   htmlContent?: string;
   badge?: string;
   badgeColor?: string;
   color: string;
   customImageUrl?: string;
+  /** When true the link opens in the device browser instead of inside the app. */
+  openExternally?: boolean;
+  /** Show this card on the app home screen (default true). */
+  showOnHome?: boolean;
+  rewardedAd?: boolean;
+  nativeAd?: boolean;
   /** Used when actionType is 'submenu'. */
   children?: SubmenuLink[];
 }
@@ -56,6 +89,74 @@ export interface KeystoreConfig {
   countryCode: string;
   isCustomUploaded: boolean;
   uploadedBase64?: string;
+}
+
+/** User-facing in-app settings panel (theme, font family, font size). */
+export interface InAppSettingsConfig {
+  enabled: boolean;
+  showInTopBar: boolean;
+  defaultTheme: AppThemeName;
+  allowThemeChange: boolean;
+  defaultFont: AppFontFamily;
+  allowFontChange: boolean;
+  defaultFontScale: number;
+  allowFontScale: boolean;
+}
+
+/** Share sheet text + optional native bridge behaviour. */
+export interface ShareConfig {
+  title: string;
+  message: string;
+  /** Optional link appended to the message. Empty = current app link. */
+  url: string;
+  /** Ask for the message in a modal before sharing. */
+  useTypedMessage: boolean;
+}
+
+export interface AppPagesConfig {
+  about: {
+    enabled: boolean;
+    title: string;
+    content: string;
+  };
+  rate: {
+    enabled: boolean;
+    title: string;
+    message: string;
+    /** Play Store / website URL opened when the user taps "Rate now". */
+    url: string;
+  };
+  privacy: {
+    enabled: boolean;
+    title: string;
+    content: string;
+  };
+}
+
+/** Live content sync: the installed app reads JSON from the creator's repo. */
+export interface DataSyncConfig {
+  enabled: boolean;
+  /** Raw URL (raw.githubusercontent.com / GitHub Pages / any CORS-enabled host). */
+  configUrl: string;
+  /** How often the running app re-checks the feed, in seconds. */
+  refreshSeconds: number;
+  /** Optional separate notification feed. Empty = notifications from configUrl payload. */
+  notificationsUrl: string;
+  /** Ask the OS for notification permission (web) when the app starts. */
+  requestNotificationPermission: boolean;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  title: string;
+  /** Default message used by the in-app test notification. */
+  message: string;
+  /** Raw URL returning { notifications: [...] } or an array. */
+  feedUrl: string;
+  pollSeconds: number;
+  showBellInTopBar: boolean;
+  /** Use the Web Notifications API in addition to the in-app inbox. */
+  useSystemNotifications: boolean;
 }
 
 export interface AppConfig {
@@ -86,6 +187,11 @@ export interface AppConfig {
     logoIcon: string;
     customImageUrl?: string;
     imageFit?: 'contain' | 'cover';
+    /** New presentation modes, including a full-screen image. */
+    layout?: SplashLayout;
+    imageBorderColor?: string;
+    imageBorderWidth?: number;
+    imageRadius?: number;
     showSpinner: boolean;
     spinnerType: 'circle' | 'dots' | 'pulse';
   };
@@ -99,13 +205,18 @@ export interface AppConfig {
     showRefreshButton: boolean;
     showThemeToggle: boolean;
     showMenuToggle: boolean;
+    showNotificationsButton?: boolean;
+    showSettingsButton?: boolean;
     style: 'flat' | 'elevated' | 'glass';
     bgColor: string;
     textColor: string;
   };
   navigation: {
-    type: 'drawer' | 'bottom-nav' | 'top-tabs' | 'floating' | 'none';
+    /** `both` shows the drawer and the bottom navigation together. */
+    type: 'drawer' | 'bottom-nav' | 'top-tabs' | 'floating' | 'none' | 'both';
     items: MenuItem[];
+    /** Extra destination list for the bottom bar when type is `both`. */
+    bottomNavItems?: MenuItem[];
     drawerHeader: {
       showUserAvatar: boolean;
       customAvatarUrl?: string;
@@ -121,6 +232,7 @@ export interface AppConfig {
     title: string;
     fallbackTitle: string;
     showAddressBar: boolean;
+    openLinksExternally?: boolean;
   };
   launchpadConfig: {
     heading: string;
@@ -158,8 +270,17 @@ export interface AppConfig {
     rewardedUnitId: string;
     nativeUnitId: string;
     bannerPosition: 'top' | 'bottom';
+    bannerSize?: 'banner' | 'large-banner' | 'medium-rectangle' | 'adaptive';
     showBannerInSimulator: boolean;
     interstitialFrequencySeconds: number;
+    /** Interstitial shows after this many item clicks (3-20, default 5). */
+    interstitialEveryClicks?: number;
+    /** App-open ad shows after this many app launches (1-10, default 5). */
+    appOpenEveryLaunches?: number;
+    /** Offer rewarded ads on destinations that enable them. */
+    enableRewardedAds?: boolean;
+    /** Offer native-style sponsored blocks inside content. */
+    enableNativeAds?: boolean;
   };
   keystore: KeystoreConfig;
   pwaSettings: {
@@ -168,5 +289,15 @@ export interface AppConfig {
     offlineSupport: boolean;
     version: string;
   };
+  /** New: share sheet, settings panel, pages, remote sync, notifications. */
+  share?: ShareConfig;
+  inAppSettings?: InAppSettingsConfig;
+  pages?: AppPagesConfig;
+  dataSync?: DataSyncConfig;
+  notifications?: NotificationSettings;
+  /** When true, downloaded files are saved by the app instead of opening a browser. */
+  downloads?: {
+    enabled: boolean;
+    inAppBrowser: boolean;
+  };
 }
-

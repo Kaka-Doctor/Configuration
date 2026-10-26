@@ -11,7 +11,9 @@ import {
   generateMainActivityKt,
   generateGitHubActionsWorkflow,
   generateKeystoreReadme,
+  generateRemoteConfigJson,
   buildAndroidProjectFiles,
+  createGitHubRepoZip,
   appSlug,
 } from './appGenerator.ts';
 import {
@@ -22,7 +24,7 @@ import {
   DEFAULT_KEYSTORE_CONFIG,
 } from './keystoreGenerator.ts';
 import { apkFileName, apkReleaseUrl, parseRepoSlug } from './exportService.ts';
-import { DEFAULT_APP_CONFIG } from './presets.ts';
+import { DEFAULT_IN_APP_SETTINGS, DEFAULT_NOTIFICATIONS, DEFAULT_APP_CONFIG } from './presets.ts';
 
 test('generateManifestJson generates valid PWA manifest fields', () => {
   const manifest = generateManifestJson(DEFAULT_APP_CONFIG);
@@ -38,6 +40,7 @@ test('generateServiceWorkerJs creates valid caching script', () => {
   assert.ok(swCode.includes('CACHE_NAME'), 'SW defines cache name');
   assert.ok(swCode.includes("self.addEventListener('install'"), 'SW defines install hook');
   assert.ok(swCode.includes("self.addEventListener('fetch'"), 'SW defines fetch caching');
+  assert.ok(swCode.includes('isLiveFeed'), 'SW keeps live JSON feeds fresh');
 });
 
 test('generateCapacitorConfig matches package id and app name', () => {
@@ -356,4 +359,249 @@ test('parseRepoSlug accepts plain slugs and GitHub URLs', () => {
   assert.equal(parseRepoSlug('git@github.com:owner/repo.git'), 'owner/repo');
   assert.equal(parseRepoSlug('not a repo'), null);
   assert.equal(parseRepoSlug(''), null);
+});
+
+test('remote config carries every live-editable feature', () => {
+  const config = {
+    ...DEFAULT_APP_CONFIG,
+    navigation: {
+      ...DEFAULT_APP_CONFIG.navigation,
+      type: 'both' as const,
+      bottomNavItems: [
+        {
+          id: 'bottom-1',
+          label: 'Home',
+          icon: 'Home',
+          actionType: 'website' as const,
+          targetUrl: 'https://example.com',
+        },
+      ],
+    },
+    notifications: { ...DEFAULT_NOTIFICATIONS, enabled: true },
+  };
+
+  const feed = JSON.parse(generateRemoteConfigJson(config));
+  assert.equal(feed.appName, config.appName);
+  assert.equal(feed.navigation.type, 'both');
+  assert.equal(feed.navigation.bottomNavItems.length, 1);
+  assert.ok(feed.share && feed.inAppSettings && feed.pages, 'editor content is in the feed');
+  assert.equal(feed.notifications.enabled, true);
+  assert.equal(feed.downloads.enabled, true);
+  assert.equal(feed.admob.interstitialEveryClicks, 5);
+  assert.equal(feed.admob.appOpenEveryLaunches, 5);
+});
+
+test('splash layouts render the selected presentation', () => {
+  const image = 'data:image/png;base64,iVBORw0KGgo=';
+  const base = DEFAULT_APP_CONFIG.splashScreen;
+
+  const full = generateAppHtml({
+    ...DEFAULT_APP_CONFIG,
+    splashScreen: {
+      ...base,
+      enabled: true,
+      layout: 'image-fullscreen',
+      customImageUrl: image,
+    },
+  });
+  assert.ok(full.includes('layout-image-fullscreen'), 'full-screen layout class');
+  assert.ok(full.includes('<img class="splash-bg-image"'), 'full-screen image covers the splash');
+  assert.ok(full.includes('splash-scrim'), 'scrim keeps the title readable');
+
+  const bordered = generateAppHtml({
+    ...DEFAULT_APP_CONFIG,
+    splashScreen: {
+      ...base,
+      enabled: true,
+      layout: 'image-bordered',
+      customImageUrl: image,
+      imageBorderColor: '#ff0000',
+      imageBorderWidth: 6,
+      imageRadius: 30,
+    },
+  });
+  assert.ok(bordered.includes('<div class="splash-image-box"'), 'bordered image box is present');
+  assert.ok(
+    bordered.includes('width:160px;height:160px;border-radius:30px;border:6px solid #ff0000'),
+    'border colour, width and radius come from the editor'
+  );
+
+  const textOnly = generateAppHtml({
+    ...DEFAULT_APP_CONFIG,
+    splashScreen: {
+      ...base,
+      enabled: true,
+      layout: 'text-only',
+      customImageUrl: image,
+    },
+  });
+  assert.ok(textOnly.includes('layout-text-only'), 'text-only layout class');
+  assert.ok(!textOnly.includes('<div class="splash-image-box"'), 'text-only hides the image');
+  assert.ok(!textOnly.includes('<img class="splash-bg-image"'), 'text-only hides the background image');
+  assert.ok(textOnly.includes('splash-title'), 'the title is still rendered');
+});
+
+test('generated app includes the share sheet, settings and notification inbox', () => {
+  const config = {
+    ...DEFAULT_APP_CONFIG,
+    topBar: {
+      ...DEFAULT_APP_CONFIG.topBar,
+      showShareButton: true,
+      showSettingsButton: true,
+      showNotificationsButton: true,
+    },
+    inAppSettings: {
+      ...DEFAULT_IN_APP_SETTINGS,
+      enabled: true,
+      showInTopBar: true,
+    },
+    notifications: {
+      ...DEFAULT_NOTIFICATIONS,
+      enabled: true,
+      showBellInTopBar: true,
+    },
+  };
+
+  const html = generateAppHtml(config);
+  assert.ok(html.includes('id="share-text"'), 'user can type the share message');
+  assert.ok(html.includes('id="share-do"'), 'typed message can be sent to native apps');
+  assert.ok(html.includes('id="btn-app-settings"'), 'settings button is in the top bar');
+  assert.ok(html.includes('id="btn-notifications"'), 'notification bell is in the top bar');
+  assert.ok(html.includes('id="notif-badge"'), 'unread badge is rendered');
+  assert.ok(html.includes('AndroidBridge'), 'native bridge is used where available');
+});
+
+test('YouTube links play in an embed and frame-blocked sites get a fallback', () => {
+  const html = generateAppHtml(DEFAULT_APP_CONFIG);
+  assert.ok(html.includes('function youtubeEmbedUrl'), 'YouTube URLs are converted to embeds');
+  assert.ok(
+    html.includes("https://www.youtube.com/embed/' + match[1]"),
+    'the embed URL keeps the video id'
+  );
+  assert.ok(html.includes('youtube.com/embed/'), 'the video id is used in the player');
+  assert.ok(html.includes('class="browser-fallback"'), 'blocked sites show a fallback card');
+  assert.ok(html.includes('Open in browser / app'), 'the fallback offers the real browser');
+  assert.ok(html.includes('function openLink(url, external'), 'links honour the per-item external flag');
+  assert.ok(html.includes('destination.openExternally'), 'destinations pass the external flag');
+  assert.ok(html.includes('FRAME_BLOCKED'), 'known embed-blocking hosts are detected');
+});
+
+test('drawer and bottom navigation can be shown together and updated live', () => {
+  const html = generateAppHtml({
+    ...DEFAULT_APP_CONFIG,
+    navigation: { ...DEFAULT_APP_CONFIG.navigation, type: 'both' },
+  });
+  assert.ok(html.includes('<nav class="bottom-nav-bar" id="bottom-nav"></nav>'), 'bottom bar is visible');
+  assert.ok(!html.includes('id="bottom-nav" hidden'), 'not hidden when both are enabled');
+
+  const drawerOnly = generateAppHtml({
+    ...DEFAULT_APP_CONFIG,
+    navigation: { ...DEFAULT_APP_CONFIG.navigation, type: 'drawer' },
+  });
+  assert.ok(drawerOnly.includes('id="bottom-nav" hidden'), 'drawer-only hides the bottom bar');
+  assert.ok(drawerOnly.includes('.bottom-nav-bar[hidden]'), 'hidden bottom bar is not painted');
+  assert.ok(drawerOnly.includes("bottomBar.hidden = !("), 'live sync toggles the bottom bar');
+});
+
+test('the generated inline script and service worker parse as JavaScript', () => {
+  const html = generateAppHtml(DEFAULT_APP_CONFIG);
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  assert.ok(scripts.length >= 1, 'the app ships an inline runtime');
+  for (const script of scripts) {
+    assert.doesNotThrow(() => new Function(script), 'runtime must not have a syntax error');
+  }
+  assert.doesNotThrow(
+    () => new Function(generateServiceWorkerJs(DEFAULT_APP_CONFIG)),
+    'service worker must not have a syntax error'
+  );
+});
+
+test('live config URL is resolved for GitHub Pages, Netlify and installed apps', () => {
+  const html = generateAppHtml(DEFAULT_APP_CONFIG);
+  assert.ok(html.includes('function resolveLiveConfigUrl'), 'runtime resolves the feed URL');
+  assert.ok(html.includes('github\\.io'), 'GitHub Pages is detected');
+  assert.ok(html.includes('raw.githubusercontent.com'), 'GitHub Pages maps to the raw feed');
+  assert.ok(html.includes("app-config.json'"), 'static hosts read app-config.json next to index.html');
+});
+
+test('Android project bridges share, downloads, notifications and ad frequency', async () => {
+  const config = {
+    ...DEFAULT_APP_CONFIG,
+    admob: {
+      ...DEFAULT_APP_CONFIG.admob,
+      bannerPosition: 'top' as const,
+      bannerSize: 'large-banner' as const,
+      interstitialEveryClicks: 7,
+      appOpenEveryLaunches: 3,
+    },
+  };
+
+  const files = await buildAndroidProjectFiles(config, { includeSigning: false });
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
+  const activity = String(
+    byPath.get('app/src/main/java/com/apex/portal/MainActivity.kt') || ''
+  );
+  assert.ok(activity.includes('fun shareText(text: String)'), 'native share intent');
+  assert.ok(
+    activity.includes('fun downloadFile(url: String, fileName: String)'),
+    'downloads stay inside the app'
+  );
+  assert.ok(
+    activity.includes('fun notify(title: String, body: String)'),
+    'creator notifications become system notifications'
+  );
+  assert.ok(activity.includes('INTERSTITIAL_EVERY = 7'), 'interstitial frequency is wired');
+  assert.ok(activity.includes('APP_OPEN_EVERY = 3'), 'app-open frequency is wired');
+
+  const layout = String(byPath.get('app/src/main/res/layout/activity_main.xml') || '');
+  assert.ok(layout.includes('ads:adSize="LARGE_BANNER"'), 'large banner size is used');
+  const adIndex = layout.indexOf('@+id/adView');
+  const webIndex = layout.indexOf('@+id/webView');
+  assert.ok(adIndex > 0 && adIndex < webIndex, 'top banner appears above the WebView');
+});
+
+test('bottom banner is placed below the WebView', async () => {
+  const files = await buildAndroidProjectFiles(
+    {
+      ...DEFAULT_APP_CONFIG,
+      admob: { ...DEFAULT_APP_CONFIG.admob, bannerPosition: 'bottom' as const },
+    },
+    { includeSigning: false }
+  );
+  const layout = String(
+    files.find((file) => file.path === 'app/src/main/res/layout/activity_main.xml')?.content || ''
+  );
+  const adIndex = layout.indexOf('@+id/adView');
+  const webIndex = layout.indexOf('@+id/webView');
+  assert.ok(adIndex > webIndex, 'bottom banner appears after the WebView');
+});
+
+test('GitHub export ships the live config feed and explains live sync', async () => {
+  const blob = await createGitHubRepoZip(DEFAULT_APP_CONFIG);
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+
+  assert.ok(zip.file('app-config.json'), 'root-level feed for installed apps');
+  assert.ok(zip.file('.github/workflows/build-apk.yml'), 'cloud APK builder');
+  assert.ok(zip.file('index.html'), 'hosted PWA entry point');
+
+  const feed = JSON.parse(await zip.file('app-config.json')!.async('string'));
+  assert.equal(feed.appName, DEFAULT_APP_CONFIG.appName);
+  assert.ok(feed.pages && feed.share && feed.downloads, 'features are in the feed');
+  assert.equal(feed.dataSync.enabled, true, 'repository exports sync live content');
+
+  const rootHtml = await zip.file('index.html')!.async('string');
+  assert.ok(
+    rootHtml.includes('__APPCRAFT_LIVE_CONFIG_URL__'),
+    'the workflow knows where to inject the repository URL'
+  );
+  assert.ok(rootHtml.includes('resolveLiveConfigUrl'), 'runtime can auto-detect the feed');
+
+  const workflow = await zip.file('.github/workflows/build-apk.yml')!.async('string');
+  assert.ok(workflow.includes('__APPCRAFT_LIVE_CONFIG_URL__'), 'CI fills the live feed URL');
+  assert.ok(workflow.includes('raw.githubusercontent.com'), 'CI uses the raw GitHub URL');
+
+  const readme = await zip.file('README.md')!.async('string');
+  assert.ok(readme.includes('Live content updates (no rebuild)'), 'documents live updates');
+  assert.ok(readme.includes('raw.githubusercontent.com'), 'shows the absolute feed URL to use');
 });

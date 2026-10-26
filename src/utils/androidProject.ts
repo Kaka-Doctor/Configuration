@@ -227,7 +227,14 @@ export function generateAndroidManifestXml(config: AppConfig): string {
   if (p.storage) {
     permissions.push('<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
   }
-  if (p.notifications) permissions.push('<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
+  if (config.downloads?.enabled !== false) {
+    // Only needed on Android 9 and older; DownloadManager writes to the public
+    // Downloads folder without it on Android 10+.
+    permissions.push('<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />');
+  }
+  if (p.notifications || config.notifications?.enabled) {
+    permissions.push('<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
+  }
   if (p.wakeLock) permissions.push('<uses-permission android:name="android.permission.WAKE_LOCK" />');
 
   const orientation =
@@ -286,28 +293,46 @@ export function generateMainActivityKt(config: AppConfig): string {
   const appUrl =
     isWebsite && /^https?:\/\//i.test(websiteUrl) ? websiteUrl : 'file:///android_asset/index.html';
   const adsEnabled = Boolean(config.admob?.enabled);
+  const notificationsEnabled = Boolean(
+    config.notifications?.enabled || config.androidSdk.permissions.notifications
+  );
+  const downloadsEnabled = config.downloads?.enabled !== false;
+
+  const interstitialEvery = Math.min(20, Math.max(3, config.admob?.interstitialEveryClicks ?? 5));
+  const appOpenEvery = Math.min(10, Math.max(1, config.admob?.appOpenEveryLaunches ?? 5));
 
   const adImports = adsEnabled
-    ? `import com.google.android.gms.ads.AdRequest
+    ? `import com.google.android.gms.ads.AdError
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.appopen.AppOpenAd
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.rewarded.RewardedAd
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 `
     : '';
 
   const adFields = adsEnabled
     ? `    private var interstitialAd: InterstitialAd? = null
+    private var rewardedAd: RewardedAd? = null
+    private var rewardEarned = false
     private lateinit var adView: AdView
 `
     : '';
 
   const adInit = adsEnabled
     ? `
-        // Google Mobile Ads
+        // Google Mobile Ads — banner, interstitial, rewarded and app-open formats.
         MobileAds.initialize(this) {}
         setupAdMobBanner()
         loadInterstitialAd()
+        loadRewardedAd()
+        maybeShowAppOpenAd()
 `
     : '';
 
@@ -315,6 +340,11 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
     ? `
     private fun setupAdMobBanner() {
         adView = findViewById(R.id.adView)
+        if (BANNER_SIZE == "adaptive") {
+            val metrics = resources.displayMetrics
+            val widthDp = (metrics.widthPixels / metrics.density).toInt()
+            adView.adSize = AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, widthDp)
+        }
         adView.loadAd(AdRequest.Builder().build())
     }
 
@@ -327,26 +357,169 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
                 override fun onAdLoaded(ad: InterstitialAd) {
                     interstitialAd = ad
                 }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    interstitialAd = null
+                }
+            }
+        )
+    }
+
+    private fun registerClickAndMaybeShowInterstitial() {
+        val prefs = getSharedPreferences("appcraft_ads", MODE_PRIVATE)
+        val clicks = prefs.getInt("clicks", 0) + 1
+        prefs.edit().putInt("clicks", clicks).apply()
+        if (clicks % INTERSTITIAL_EVERY == 0) showInterstitialIfAvailable()
+    }
+
+    private fun showInterstitialIfAvailable() {
+        val ad = interstitialAd ?: run {
+            loadInterstitialAd()
+            return
+        }
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                interstitialAd = null
+                loadInterstitialAd()
+            }
+
+            override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                interstitialAd = null
+                loadInterstitialAd()
+            }
+        }
+        ad.show(this)
+    }
+
+    private fun loadRewardedAd() {
+        RewardedAd.load(
+            this,
+            "${kotlinString(config.admob.rewardedUnitId || 'ca-app-pub-3940256099942544/5224354917')}",
+            AdRequest.Builder().build(),
+            object : RewardedAdLoadCallback() {
+                override fun onAdLoaded(ad: RewardedAd) {
+                    rewardedAd = ad
+                }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    rewardedAd = null
+                }
+            }
+        )
+    }
+
+    /** Called from JavaScript before opening a section that uses a rewarded ad. */
+    private fun showRewardedAd() {
+        val ad = rewardedAd
+        if (ad == null) {
+            loadRewardedAd()
+            runJs("window.__onRewardedFailed && window.__onRewardedFailed()")
+            return
+        }
+        rewardEarned = false
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                rewardedAd = null
+                loadRewardedAd()
+                if (rewardEarned) {
+                    runJs("window.__onRewarded && window.__onRewarded()")
+                } else {
+                    runJs("window.__onRewardedFailed && window.__onRewardedFailed()")
+                }
+            }
+
+            override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                rewardedAd = null
+                loadRewardedAd()
+                runJs("window.__onRewardedFailed && window.__onRewardedFailed()")
+            }
+        }
+        ad.show(this) { rewardEarned = true }
+    }
+
+    /** App-open ads respect the 1-10 launch interval chosen in the studio. */
+    private fun maybeShowAppOpenAd() {
+        val prefs = getSharedPreferences("appcraft_ads", MODE_PRIVATE)
+        val launches = prefs.getInt("launches", 0) + 1
+        prefs.edit().putInt("launches", launches).apply()
+        if (launches % APP_OPEN_EVERY != 0) return
+
+        AppOpenAd.load(
+            this,
+            "${kotlinString(config.admob.appOpenUnitId || 'ca-app-pub-3940256099942544/3419832817')}",
+            AdRequest.Builder().build(),
+            object : AppOpenAd.AppOpenAdLoadCallback() {
+                override fun onAdLoaded(ad: AppOpenAd) {
+                    ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {}
+                        override fun onAdFailedToShowFullScreenContent(error: AdError) {}
+                    }
+                    ad.show(this@MainActivity)
+                }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {}
             }
         )
     }
 `
     : '';
 
+  const bridgeAdMethods = adsEnabled
+    ? `
+        @JavascriptInterface
+        fun maybeInterstitial() {
+            runOnUiThread { registerClickAndMaybeShowInterstitial() }
+        }
+
+        @JavascriptInterface
+        fun showRewarded() {
+            runOnUiThread { showRewardedAd() }
+        }
+
+        @JavascriptInterface
+        fun maybeAppOpen() {
+            runOnUiThread { maybeShowAppOpenAd() }
+        }
+`
+    : '';
+
+  const notificationPermission = notificationsEnabled
+    ? '        requestNotificationPermissionIfNeeded()\n'
+    : '';
+
+  const destroyAds = adsEnabled
+    ? '        if (::adView.isInitialized) adView.destroy()\n'
+    : '';
+
   return `package ${packageName}
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.view.View
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 ${adImports}
 class MainActivity : AppCompatActivity() {
 
@@ -357,9 +530,10 @@ ${adFields}
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.webView)
+        createNotificationChannel()
         setupWebView()
         setupBackNavigation()
-${adInit}    }
+${notificationPermission}${adInit}    }
 
     private fun setupWebView() {
         val settings = webView.settings
@@ -371,10 +545,16 @@ ${adInit}    }
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        CookieManager.getInstance().setAcceptCookie(true)
+
+        // Native bridge used by share sheets, downloads, notifications and ads.
+        webView.addJavascriptInterface(WebAppInterface(), "AndroidBridge")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url ?: return false
+                // http(s), file, data and blob stay inside the app. Everything else
+                // (tel:, mailto:, intent:, market:, ...) goes to the device.
                 return openExternally(url)
             }
 
@@ -392,17 +572,25 @@ ${adInit}    }
             }
         }
 
+        // Any file the WebView cannot render is saved by DownloadManager instead
+        // of opening another browser.
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            if (DOWNLOADS_ENABLED) {
+                startDownload(url, URLUtil.guessFileName(url, contentDisposition, mimeType), userAgent)
+            } else {
+                startExternalIntent(Uri.parse(url))
+            }
+        }
+
         webView.loadUrl(APP_URL)
     }
 
-    /** Keeps app content in the WebView and sends other links to the device browser. */
+    /** Keeps http(s) inside the WebView; sends custom schemes to the device. */
     private fun openExternally(uri: Uri): Boolean {
         val scheme = uri.scheme?.lowercase() ?: return false
-        if (scheme == "file") return false
-        if (scheme == "http" || scheme == "https") {
-            if (KEEP_LINKS_IN_APP) return false
-            return startExternalIntent(uri)
-        }
+        if (scheme == "file" || scheme == "http" || scheme == "https" || scheme == "about" ||
+            scheme == "data" || scheme == "blob" || scheme == "javascript"
+        ) return false
         return startExternalIntent(uri)
     }
 
@@ -411,8 +599,86 @@ ${adInit}    }
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
         } catch (error: Exception) {
+            Toast.makeText(this, "No app can open this link", Toast.LENGTH_SHORT).show()
             false
         }
+    }
+
+    private fun startDownload(url: String, suggestedName: String, userAgent: String? = null) {
+        try {
+            if (url.startsWith("blob:") || url.startsWith("data:")) {
+                Toast.makeText(
+                    this,
+                    "This file is created inside the page. Use the app's Download button.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+            val fileName = (suggestedName.ifBlank { "download" }).replace("/", "_")
+            val request = DownloadManager.Request(Uri.parse(url))
+            request.setTitle(fileName)
+            request.setDescription("Downloading to your Downloads folder")
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            if (!userAgent.isNullOrBlank()) request.setUserAgent(userAgent)
+            val cookie = CookieManager.getInstance().getCookie(url)
+            if (!cookie.isNullOrBlank()) request.addRequestHeader("Cookie", cookie)
+            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.enqueue(request)
+            Toast.makeText(this, "Downloading " + fileName, Toast.LENGTH_SHORT).show()
+        } catch (error: Exception) {
+            // If the file manager rejects the request, hand it to the device.
+            startExternalIntent(Uri.parse(url))
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "App updates",
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+            channel.description = "Messages and announcements sent by the app creator"
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
+    }
+
+    private fun postNotification(title: String, body: String) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pending = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title.ifBlank { getString(R.string.app_name) })
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            .build()
+        NotificationManagerCompat.from(this).notify(System.currentTimeMillis().toInt(), notification)
+    }
+
+    private fun runJs(script: String) {
+        runOnUiThread { webView.evaluateJavascript(script, null) }
     }
 
     private fun setupBackNavigation() {
@@ -429,33 +695,93 @@ ${adInit}    }
     }
 ${adMethods}
     override fun onDestroy() {
-        webView.destroy()
+${destroyAds}        webView.destroy()
         super.onDestroy()
     }
 
+    /** Methods exposed to the generated web app as window.AndroidBridge. */
+    inner class WebAppInterface {
+        @JavascriptInterface
+        fun shareText(text: String) {
+            runOnUiThread {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+                startActivity(Intent.createChooser(send, "Share via"))
+            }
+        }
+
+        @JavascriptInterface
+        fun openExternal(url: String) {
+            runOnUiThread {
+                if (url.isNotBlank()) startExternalIntent(Uri.parse(url))
+            }
+        }
+
+        /** Keeps the page inside the app (the system Back button returns to it). */
+        @JavascriptInterface
+        fun openInApp(url: String) {
+            runOnUiThread {
+                if (url.isNotBlank()) webView.loadUrl(url)
+            }
+        }
+
+        @JavascriptInterface
+        fun downloadFile(url: String, fileName: String) {
+            runOnUiThread {
+                if (url.isNotBlank()) {
+                    startDownload(url, fileName.ifBlank { URLUtil.guessFileName(url, null, null) })
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun toast(message: String) {
+            runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show() }
+        }
+
+        @JavascriptInterface
+        fun notify(title: String, body: String) {
+            runOnUiThread { postNotification(title, body) }
+        }
+${bridgeAdMethods}    }
+
     companion object {
         private const val APP_URL = "${kotlinString(appUrl)}"
-        private const val KEEP_LINKS_IN_APP = ${isWebsite && /^https?:\/\//i.test(websiteUrl) ? 'true' : 'false'}
+        private const val CHANNEL_ID = "appcraft_updates"
+        private const val BANNER_SIZE = "${kotlinString(config.admob?.bannerSize || 'adaptive')}"
+        private const val INTERSTITIAL_EVERY = ${interstitialEvery}
+        private const val APP_OPEN_EVERY = ${appOpenEvery}
+        private const val DOWNLOADS_ENABLED = ${downloadsEnabled}
     }
 }
 `;
-}
 
+}
 /* ------------------------------- Resources -------------------------------- */
 
 export function generateActivityLayout(config: AppConfig): string {
   const adsEnabled = Boolean(config.admob?.enabled);
+  const bannerPosition = config.admob?.bannerPosition === 'top' ? 'top' : 'bottom';
+  const bannerSize = config.admob?.bannerSize || 'adaptive';
+  const adSize =
+    bannerSize === 'large-banner'
+      ? 'LARGE_BANNER'
+      : bannerSize === 'medium-rectangle'
+        ? 'MEDIUM_RECTANGLE'
+        : 'BANNER';
   const adsView = adsEnabled
     ? `
-    <com.google.android.gms.ads.AdView
-        android:id="@+id/adView"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        ads:adSize="BANNER"
-        ads:adUnitId="${escapeXml(config.admob.bannerUnitId || 'ca-app-pub-3940256099942544/6300978111')}" />`
+        <com.google.android.gms.ads.AdView
+            android:id="@+id/adView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            ads:adSize="${adSize}"
+            ads:adUnitId="${escapeXml(config.admob.bannerUnitId || 'ca-app-pub-3940256099942544/6300978111')}" />`
     : `
-    <!-- AdMob disabled: no ad view in this layout -->`;
+        <!-- AdMob disabled: no ad view in this layout -->`;
 
   const adsNamespace = adsEnabled ? '\n    xmlns:ads="http://schemas.android.com/apk/res-auto"' : '';
 
@@ -477,13 +803,13 @@ export function generateActivityLayout(config: AppConfig): string {
             android:layout_height="3dp"
             android:indeterminate="true"
             android:visibility="gone" />
-
+${bannerPosition === 'top' ? adsView : ''}
         <WebView
             android:id="@+id/webView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
-${adsView}
+${bannerPosition === 'bottom' ? adsView : ''}
     </LinearLayout>
 </FrameLayout>
 `;
@@ -598,6 +924,27 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # The installed APK and the hosted PWA read app-config.json at runtime.
+      # This step points them at this exact repository so editing that file
+      # updates the app without rebuilding.
+      - name: Point the app at this repository's live content
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          repo = "\${{ github.repository }}"
+          url = f"https://raw.githubusercontent.com/{repo}/main/app-config.json"
+          for name in ("index.html", "app/src/main/assets/index.html"):
+              path = pathlib.Path(name)
+              if path.exists():
+                  path.write_text(
+                      path.read_text(encoding="utf-8").replace(
+                          "__APPCRAFT_LIVE_CONFIG_URL__", url
+                      ),
+                      encoding="utf-8",
+                  )
+          print("Live config:", url)
+          PY
 
       - name: Set up JDK \${{ env.JDK_VERSION }}
         uses: actions/setup-java@v4
@@ -783,12 +1130,56 @@ gradlew.bat :app:bundleRelease
 
 ## Option 3 — Host the PWA (no APK required)
 
-\`index.html\`, \`manifest.webmanifest\` and \`sw.js\` are ready for GitHub Pages:
+\`index.html\`, \`manifest.webmanifest\`, \`sw.js\` and \`app-config.json\` are ready for
+GitHub Pages:
 
 1. Push the repository (commands above).
 2. **Settings → Pages → Deploy from a branch → main / root**.
 3. Open \`https://<YOUR-GITHUB-USERNAME>.github.io/${slug}/\` on Android Chrome and
    choose **Add to Home screen / Install app**.
+
+---
+
+## Live content updates (no rebuild)
+
+\`app-config.json\` is the live feed. The installed app and the hosted PWA fetch
+it at runtime, so editing it updates every copy of the app:
+
+1. Edit \`app-config.json\` in the repository (menu items, cards, pages, share
+   text, notifications feed, ad settings).
+2. Commit and push.
+3. The app refreshes on its next launch / poll interval (default every 120 s).
+   The hosted PWA can also be reloaded to see the change immediately.
+
+**This repository is wired up automatically.** The included GitHub Actions
+workflow replaces the live-feed placeholder with this repository's raw URL in
+both \`index.html\` and the APK asset before building, so the published APK
+already points at:
+
+\`\`\`
+https://raw.githubusercontent.com/\${{ github.repository }}/main/app-config.json
+\`\`\`
+
+For a manual Android Studio build (or if you host the same repository on
+Netlify/Vercel), paste the absolute URL into
+**App Features → Live content sync**:
+
+\`\`\`
+https://raw.githubusercontent.com/${repo}/main/app-config.json
+\`\`\`
+
+GitHub serves this with \`Access-Control-Allow-Origin: *\`, so it works from the
+APK and from the PWA. A hosted PWA can also read \`/app-config.json\` from its own
+origin; the runtime detects GitHub Pages, Netlify and Vercel automatically.
+
+### Notifications
+
+The app polls the notification feed URL (a JSON array or
+\`{ "notifications": [...] }\`) and shows an in-app badge + inbox. On Android the
+generated \`AndroidBridge.notify()\` also posts a real system notification. The
+app must be open (or running in the background) to receive them — a browser /
+WebView cannot receive push messages while fully closed without a push service
+(Firebase Cloud Messaging). Add FCM later if you need closed-app push.
 
 ---
 
@@ -801,12 +1192,14 @@ app/src/main/res/layout/activity_main.xml
 app/src/main/res/mipmap-*/          # real PNG launcher icons generated from your logo
 app/src/main/res/values/            # strings, colors, themes
 app/src/main/assets/index.html      # the complete offline app UI
+app/src/main/assets/app-config.json # live feed shipped with the APK
 .github/workflows/build-apk.yml     # cloud APK/AAB builder
 gradlew, gradlew.bat                # included Gradle wrapper (no install needed)
 gradle/wrapper/                     # wrapper jar + properties
 index.html                          # PWA version (GitHub Pages)
 manifest.webmanifest
 sw.js
+app-config.json                     # live content feed for installed apps
 \`\`\`
 
 ${adsSection}

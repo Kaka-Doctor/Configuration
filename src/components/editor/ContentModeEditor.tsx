@@ -224,6 +224,26 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
               <div className="w-10 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
             </label>
           </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+            <div>
+              <span className="text-xs font-medium text-white block">
+                Open website links outside the app
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Default for this site. Individual menu items can override it.
+              </span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(config.websiteConfig.openLinksExternally)}
+                onChange={(e) => updateWebsite({ openLinksExternally: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
         </div>
       )}
 
@@ -524,6 +544,50 @@ export const ContentModeEditor: React.FC<ContentModeEditorProps> = ({ config, on
                                 Submenu
                               </button>
                             </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                            Card visibility & behaviour
+                          </span>
+                          <div className="grid grid-cols-2 gap-2 text-[11px]">
+                            <label className="flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={iconItem.showOnHome !== false}
+                                onChange={(e) => updateIconItem(iconItem.id, { showOnHome: e.target.checked })}
+                                className="accent-indigo-500"
+                              />
+                              Show on main screen
+                            </label>
+                            <label className="flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(iconItem.openExternally)}
+                                onChange={(e) => updateIconItem(iconItem.id, { openExternally: e.target.checked })}
+                                className="accent-indigo-500"
+                              />
+                              Open outside app
+                            </label>
+                            <label className="flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(iconItem.rewardedAd)}
+                                onChange={(e) => updateIconItem(iconItem.id, { rewardedAd: e.target.checked })}
+                                className="accent-amber-500"
+                              />
+                              Rewarded ad first
+                            </label>
+                            <label className="flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(iconItem.nativeAd)}
+                                onChange={(e) => updateIconItem(iconItem.id, { nativeAd: e.target.checked })}
+                                className="accent-rose-500"
+                              />
+                              Native ad in content
+                            </label>
                           </div>
                         </div>
 

@@ -21,7 +21,30 @@ import {
   Send,
   Sparkles,
   FolderTree,
+  Bell,
+  Settings,
+  Star,
+  Info,
+  FileCode,
 } from 'lucide-react';
+
+function toYouTubeEmbed(raw: string): string {
+  const match = raw.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{6,})/i
+  );
+  return match ? `https://www.youtube.com/embed/${match[1]}` : '';
+}
+
+const FRAME_BLOCKED_HOSTS =
+  /(?:^|\.)(?:facebook\.com|instagram\.com|x\.com|twitter\.com|tiktok\.com|linkedin\.com|google\.com|youtube\.com|amazon\.[a-z.]+|whatsapp\.com|telegram\.(?:org|me)|github\.com|netflix\.com|spotify\.com|reddit\.com|pinterest\.com)$/i;
+
+function isFrameBlocked(raw: string): boolean {
+  try {
+    return FRAME_BLOCKED_HOSTS.test(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+}
 
 interface DeviceSimulatorProps {
   config: AppConfig;
@@ -37,9 +60,25 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
   const [activeTopTabId, setActiveTopTabId] = useState<string>('');
   const [activeModalContent, setActiveModalContent] = useState<{ title: string; html: string } | null>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<{ title: string; links: SubmenuLink[] } | null>(null);
+  const [submenuHistory, setSubmenuHistory] = useState<{ title: string; links: SubmenuLink[] }[]>([]);
   const [inAppBrowserUrl, setInAppBrowserUrl] = useState<string | null>(null);
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [shareMessage, setShareMessage] = useState(config.share?.message || '');
+  const [showSettingsSheet, setShowSettingsSheet] = useState(false);
+  const [showNotificationsSheet, setShowNotificationsSheet] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<string>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  );
   const [copiedLink, setCopiedLink] = useState(false);
+  const [simTheme, setSimTheme] = useState<'light' | 'dark' | 'midnight' | 'emerald'>(
+    config.inAppSettings?.defaultTheme || 'light'
+  );
+  const [simFont, setSimFont] = useState<'system' | 'serif' | 'rounded' | 'mono'>(
+    config.inAppSettings?.defaultFont || 'system'
+  );
+  const [simFontScale, setSimFontScale] = useState<number>(
+    config.inAppSettings?.defaultFontScale || 1
+  );
 
   // Set default active tab / nav
   useEffect(() => {
@@ -74,35 +113,90 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
   };
 
   const handleShareTrigger = () => {
+    setShareMessage(config.share?.message || `Check out ${config.appName}!`);
     setShowShareSheet(true);
   };
 
+  const shareFullText = () => {
+    const url = config.share?.url || window.location.href;
+    return `${shareMessage}${url ? '\n' + url : ''}`;
+  };
+
+  const handleNativeShare = async () => {
+    const full = shareFullText();
+    const url = config.share?.url || window.location.href;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: config.share?.title || config.appName,
+          text: shareMessage,
+          url,
+        });
+        setShowShareSheet(false);
+        return;
+      } catch {
+        // User cancelled or the browser refused — fall back to copying.
+      }
+    }
+    try {
+      await navigator.clipboard?.writeText(full);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {}
+  };
+
   const handleCopyShareLink = () => {
-    navigator.clipboard?.writeText(window.location.href);
+    navigator.clipboard?.writeText(shareFullText());
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const openSubmenu = (title: string, links: SubmenuLink[]) => {
+    setSubmenuHistory([]);
+    setActiveSubmenu({ title, links });
+  };
+
+  const openSite = (url: string, external?: boolean) => {
+    if (!url) return;
+    if (external) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setInAppBrowserUrl(url);
+  };
+
   const handleLaunchpadIconClick = (icon: LaunchpadIconItem) => {
     if (icon.actionType === 'submenu') {
-      setActiveSubmenu({ title: icon.title, links: icon.children || [] });
+      openSubmenu(icon.title, icon.children || []);
     } else if (icon.actionType === 'website' && icon.targetUrl) {
-      setInAppBrowserUrl(icon.targetUrl);
+      openSite(icon.targetUrl, icon.openExternally);
     } else if (icon.actionType === 'html-page' && icon.htmlContent) {
       setActiveModalContent({ title: icon.title, html: icon.htmlContent });
+    } else if (icon.actionType === 'share') {
+      handleShareTrigger();
+    } else if (icon.actionType === 'about') {
+      setActiveModalContent({
+        title: config.pages?.about?.title || 'About',
+        html: config.pages?.about?.content || '<p>About page is disabled.</p>',
+      });
     }
   };
 
   const handleMenuItemClick = (item: MenuItem) => {
     setIsDrawerOpen(false);
     if (item.actionType === 'submenu') {
-      setActiveSubmenu({ title: item.label, links: item.children || [] });
+      openSubmenu(item.label, item.children || []);
     } else if (item.actionType === 'share') {
       handleShareTrigger();
+    } else if (item.actionType === 'about') {
+      setActiveModalContent({
+        title: config.pages?.about?.title || 'About',
+        html: config.pages?.about?.content || '<p>About page is disabled.</p>',
+      });
     } else if (item.actionType === 'html-page' && item.targetHtml) {
       setActiveModalContent({ title: item.label, html: item.targetHtml });
     } else if (item.actionType === 'website' && item.targetUrl) {
-      setInAppBrowserUrl(item.targetUrl);
+      openSite(item.targetUrl, item.openExternally);
     } else if (item.actionType === 'contact') {
       setActiveModalContent({
         title: item.label,
@@ -112,9 +206,19 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
   };
 
   const handleSubmenuLinkClick = (link: SubmenuLink) => {
+    if (link.actionType === 'submenu' || (link.children && link.children.length > 0)) {
+      setSubmenuHistory((history) => (activeSubmenu ? [...history, activeSubmenu] : history));
+      setActiveSubmenu({ title: link.label, links: link.children || [] });
+      return;
+    }
     setActiveSubmenu(null);
     if (link.actionType === 'share') {
       handleShareTrigger();
+    } else if (link.actionType === 'about') {
+      setActiveModalContent({
+        title: config.pages?.about?.title || 'About',
+        html: config.pages?.about?.content || '<p>About page is disabled.</p>',
+      });
     } else if (link.actionType === 'contact') {
       setActiveModalContent({
         title: link.label,
@@ -128,7 +232,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
         html: link.targetHtml || '<p>No content available</p>',
       });
     } else if (link.actionType === 'website' && link.targetUrl) {
-      setInAppBrowserUrl(link.targetUrl);
+      openSite(link.targetUrl, link.openExternally);
     }
   };
 
@@ -138,6 +242,58 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
       : frameColor === 'silver'
       ? 'border-slate-300 bg-slate-200 shadow-2xl shadow-slate-900/40'
       : 'border-emerald-900 bg-emerald-950 shadow-2xl shadow-emerald-950/50';
+
+  const visibleLaunchpadIcons = config.launchpadConfig.icons.filter(
+    (item) => item.showOnHome !== false
+  );
+  const bottomNavSource = (
+    config.navigation.bottomNavItems && config.navigation.bottomNavItems.length > 0
+      ? config.navigation.bottomNavItems
+      : config.navigation.items
+  )
+    .filter((item) => item.showOnHome !== false)
+    .slice(0, 5);
+  const bannerSize = config.admob?.bannerSize || 'adaptive';
+  const bannerHeightClass =
+    bannerSize === 'large-banner'
+      ? 'h-20'
+      : bannerSize === 'medium-rectangle'
+        ? 'h-48'
+        : bannerSize === 'banner'
+          ? 'h-11'
+          : 'h-14';
+  const bannerLabel =
+    bannerSize === 'large-banner'
+      ? 'Large banner (320×100)'
+      : bannerSize === 'medium-rectangle'
+        ? 'Medium rectangle (300×250)'
+        : bannerSize === 'banner'
+          ? 'Small banner (320×50)'
+          : 'Adaptive banner';
+  const splashLayout = config.splashScreen.layout || 'logo-center';
+  const browserEmbedUrl = inAppBrowserUrl ? toYouTubeEmbed(inAppBrowserUrl) : '';
+  const browserIsBlocked = Boolean(
+    inAppBrowserUrl && !browserEmbedUrl && isFrameBlocked(inAppBrowserUrl)
+  );
+  const simulatorFontFamily =
+    simFont === 'serif'
+      ? 'Georgia, "Times New Roman", serif'
+      : simFont === 'mono'
+        ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
+        : simFont === 'rounded'
+          ? '"Trebuchet MS", "Segoe UI", system-ui, sans-serif'
+          : 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  const simulatorBackground =
+    simTheme === 'dark'
+      ? '#0f172a'
+      : simTheme === 'midnight'
+        ? '#020617'
+        : simTheme === 'emerald'
+          ? '#052e2b'
+          : config.backgroundColor;
+  const rateUrl =
+    config.pages?.rate?.url ||
+    `https://play.google.com/store/apps/details?id=${config.appPackageId}`;
 
   return (
     <div className="flex flex-col items-center w-full">
@@ -246,7 +402,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
           {/* Screen Glass */}
           <div
             className="relative w-full h-full rounded-[40px] overflow-hidden flex flex-col shadow-inner"
-            style={{ backgroundColor: config.backgroundColor }}
+            style={{ backgroundColor: simulatorBackground, fontFamily: simulatorFontFamily }}
           >
             {/* Android Status Bar */}
             <div className="h-7 w-full bg-black/80 backdrop-blur-xs text-white text-[11px] font-medium px-6 flex items-center justify-between shrink-0 z-40">
@@ -330,6 +486,28 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       aria-label="Share App"
                     >
                       <Share2 size={18} />
+                    </button>
+                  )}
+
+                  {config.topBar.showNotificationsButton !== false &&
+              (config.notifications?.enabled || config.dataSync?.enabled) && (
+                    <button
+                      onClick={() => setShowNotificationsSheet(true)}
+                      className="relative p-1.5 rounded-full hover:bg-white/10 active:bg-white/20 transition"
+                      aria-label="Notifications"
+                    >
+                      <Bell size={18} />
+                      <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-rose-500" />
+                    </button>
+                  )}
+
+                  {config.inAppSettings?.enabled && config.topBar.showSettingsButton !== false && (
+                    <button
+                      onClick={() => setShowSettingsSheet(true)}
+                      className="p-1.5 rounded-full hover:bg-white/10 active:bg-white/20 transition"
+                      aria-label="App settings"
+                    >
+                      <Settings size={18} />
                     </button>
                   )}
 
@@ -435,7 +613,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                         : 'grid-cols-2'
                     }`}
                   >
-                    {config.launchpadConfig.icons.map((item) => (
+                    {visibleLaunchpadIcons.map((item) => (
                       <div
                         key={item.id}
                         onClick={() => handleLaunchpadIconClick(item)}
@@ -490,9 +668,10 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                     ))}
                   </div>
 
-                  {config.launchpadConfig.icons.length === 0 && (
+                  {visibleLaunchpadIcons.length === 0 && (
                     <div className="p-6 text-center text-slate-400 text-xs border border-dashed border-slate-300 rounded-xl">
-                      No icons configured yet. Use the Launchpad editor tab to add app icons!
+                      No cards are shown on the main screen. Add icons in the Launchpad editor or
+                      switch “Show on main screen” on for the ones you want.
                     </div>
                   )}
                 </div>
@@ -501,23 +680,24 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
 
             {/* Simulated AdMob Top Banner (if top position) */}
             {config.admob?.enabled && config.admob.showBannerInSimulator && config.admob.bannerPosition === 'top' && (
-              <div className="shrink-0 h-11 w-full bg-slate-900 border-b border-amber-500/40 px-3 flex items-center justify-between text-white z-25 text-xs shadow-md">
+              <div className={`shrink-0 ${bannerHeightClass} w-full bg-slate-900 border-b border-amber-500/40 px-3 flex items-center justify-between text-white z-25 text-xs shadow-md`}>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-amber-500 text-black">
                     Ad
                   </span>
                   <span className="text-[11px] font-medium text-slate-200 truncate">
-                    {config.admob.isTestingMode ? 'AdMob Test Banner (320x50)' : 'Sponsored Ad'}
+                    {config.admob.isTestingMode ? `AdMob Test · ${bannerLabel}` : 'Sponsored Ad'}
                   </span>
                 </div>
-                <span className="text-[9px] text-slate-400 font-mono">AdMob</span>
+                <span className="text-[9px] text-slate-400 font-mono">Top</span>
               </div>
             )}
 
-            {/* Bottom Nav Bar (if configured as bottom-nav) */}
-            {config.navigation.type === 'bottom-nav' && config.navigation.items.length > 0 && (
+            {/* Bottom Nav Bar (bottom-nav or drawer + bottom bar) */}
+            {(config.navigation.type === 'bottom-nav' || config.navigation.type === 'both') &&
+              bottomNavSource.length > 0 && (
               <div className="shrink-0 h-14 bg-white border-t border-slate-200 flex items-center justify-around px-1 z-30 shadow-lg">
-                {config.navigation.items.slice(0, 5).map((item) => {
+                {bottomNavSource.map((item) => {
                   const isActive = activeBottomNavId === item.id;
                   return (
                     <button
@@ -549,16 +729,16 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
 
             {/* Simulated AdMob Bottom Banner (if bottom position) */}
             {config.admob?.enabled && config.admob.showBannerInSimulator && config.admob.bannerPosition === 'bottom' && (
-              <div className="shrink-0 h-11 w-full bg-slate-900 border-t border-amber-500/40 px-3 flex items-center justify-between text-white z-25 text-xs shadow-md">
+              <div className={`shrink-0 ${bannerHeightClass} w-full bg-slate-900 border-t border-amber-500/40 px-3 flex items-center justify-between text-white z-25 text-xs shadow-md`}>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-amber-500 text-black">
                     Ad
                   </span>
                   <span className="text-[11px] font-medium text-slate-200 truncate">
-                    {config.admob.isTestingMode ? 'AdMob Test Banner (320x50)' : 'Sponsored Ad'}
+                    {config.admob.isTestingMode ? `AdMob Test · ${bannerLabel}` : 'Sponsored Ad'}
                   </span>
                 </div>
-                <span className="text-[9px] text-slate-400 font-mono">AdMob</span>
+                <span className="text-[9px] text-slate-400 font-mono">Bottom</span>
               </div>
             )}
 
@@ -596,12 +776,71 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                     <X size={16} />
                   </button>
                 </div>
-                <iframe
-                  src={inAppBrowserUrl}
-                  title="In-App Browser"
-                  className="w-full flex-1 border-none"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                />
+                {browserEmbedUrl ? (
+                  <div className="flex-1 bg-black flex flex-col">
+                    <iframe
+                      src={browserEmbedUrl}
+                      title="Video player"
+                      className="w-full flex-1 border-none"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                      allowFullScreen
+                    />
+                    <p className="text-[10px] text-slate-300 px-3 py-2 text-center">
+                      Playing inside the app. Use “Open outside” for the full YouTube app.
+                    </p>
+                  </div>
+                ) : browserIsBlocked ? (
+                  <div className="flex-1 flex items-center justify-center p-6">
+                    <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
+                      <p className="text-sm font-bold text-slate-800">
+                        This site blocks in-app views
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1 break-all">
+                        {inAppBrowserUrl}
+                      </p>
+                      <button
+                        onClick={() => {
+                          window.open(inAppBrowserUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="mt-3 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                      >
+                        Open in browser / app
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <iframe
+                    src={inAppBrowserUrl}
+                    title="In-App Browser"
+                    className="w-full flex-1 border-none"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+                  />
+                )}
+                <div className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2">
+                  <button
+                    onClick={() => {
+                      window.open(inAppBrowserUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="flex-1 py-2 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Open outside app
+                  </button>
+                  <button
+                    onClick={() => {
+                      const anchor = document.createElement('a');
+                      anchor.href = inAppBrowserUrl;
+                      anchor.download = '';
+                      anchor.rel = 'noopener';
+                      anchor.target = '_blank';
+                      document.body.appendChild(anchor);
+                      anchor.click();
+                      document.body.removeChild(anchor);
+                    }}
+                    className="flex-1 py-2 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Download / save
+                  </button>
+                </div>
               </div>
             )}
 
@@ -647,7 +886,10 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
             {activeSubmenu && (
               <div
                 className="absolute inset-0 z-[46] flex flex-col justify-end bg-black/50 animate-in fade-in duration-200"
-                onClick={() => setActiveSubmenu(null)}
+                onClick={() => {
+                  setActiveSubmenu(null);
+                  setSubmenuHistory([]);
+                }}
               >
                 <div
                   className="bg-white rounded-t-3xl max-h-[78%] flex flex-col shadow-2xl animate-in slide-in-from-bottom-6 duration-200"
@@ -655,6 +897,18 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                 >
                   <div className="flex items-center justify-between px-4 pt-3 pb-2.5 border-b border-slate-100">
                     <div className="min-w-0">
+                      {submenuHistory.length > 0 && (
+                        <button
+                          onClick={() => {
+                            const previous = submenuHistory[submenuHistory.length - 1];
+                            setSubmenuHistory((history) => history.slice(0, -1));
+                            setActiveSubmenu(previous);
+                          }}
+                          className="text-[10px] font-bold text-indigo-600 mb-0.5"
+                        >
+                          ‹ Back
+                        </button>
+                      )}
                       <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-violet-600 font-bold">
                         <FolderTree size={11} />
                         <span>Submenu</span>
@@ -664,7 +918,10 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       </div>
                     </div>
                     <button
-                      onClick={() => setActiveSubmenu(null)}
+                      onClick={() => {
+                        setActiveSubmenu(null);
+                        setSubmenuHistory([]);
+                      }}
                       className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                       aria-label="Close submenu"
                     >
@@ -840,8 +1097,31 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                     </button>
                   </div>
 
-                  {/* Share Target Apps */}
-                  <div className="grid grid-cols-4 gap-2 py-2 text-center text-[10px] text-slate-600">
+                  {/* The message the user types is what gets shared. */}
+                  <textarea
+                    value={shareMessage}
+                    onChange={(e) => setShareMessage(e.target.value)}
+                    rows={3}
+                    placeholder="Type a message to share…"
+                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:outline-hidden focus:border-indigo-400"
+                  />
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                    <span className="truncate">
+                      {config.share?.url || 'The app link is added automatically'}
+                    </span>
+                    <span className="shrink-0 font-mono">{shareMessage.length} chars</span>
+                  </div>
+
+                  <button
+                    onClick={handleNativeShare}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-bold transition"
+                  >
+                    <Share2 size={15} />
+                    Share message with apps
+                  </button>
+
+                  {/* Direct share targets, using the typed text */}
+                  <div className="grid grid-cols-4 gap-2 py-1 text-center text-[10px] text-slate-600">
                     <button
                       onClick={handleCopyShareLink}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-100 transition"
@@ -849,11 +1129,11 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
                         <Copy size={18} />
                       </div>
-                      <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
+                      <span>{copiedLink ? 'Copied!' : 'Copy text'}</span>
                     </button>
                     <button
                       onClick={() => {
-                        window.open(`https://wa.me/?text=Check out ${encodeURIComponent(config.appName)}!`);
+                        window.open(`https://wa.me/?text=${encodeURIComponent(shareFullText())}`);
                         setShowShareSheet(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-100 transition"
@@ -865,7 +1145,11 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                     </button>
                     <button
                       onClick={() => {
-                        window.open(`mailto:?subject=${encodeURIComponent(config.appName)}&body=Download this Android app!`);
+                        window.open(
+                          `mailto:?subject=${encodeURIComponent(
+                            config.share?.title || config.appName
+                          )}&body=${encodeURIComponent(shareFullText())}`
+                        );
                         setShowShareSheet(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-100 transition"
@@ -876,18 +1160,285 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       <span>Email</span>
                     </button>
                     <button
-                      onClick={() => {
-                        window.open(`https://twitter.com/intent/tweet?text=Check out ${encodeURIComponent(config.appName)}!`);
-                        setShowShareSheet(false);
-                      }}
+                      onClick={handleNativeShare}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-100 transition"
                     >
                       <div className="w-10 h-10 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center">
                         <Send size={18} />
                       </div>
-                      <span>Social</span>
+                      <span>More</span>
                     </button>
                   </div>
+                  <p className="text-[10px] text-slate-400 text-center -mt-1">
+                    On Android this opens the system share sheet with every app that accepts text.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* In-app settings sheet (themes, font family, font size, pages) */}
+            {showSettingsSheet && (
+              <div
+                className="absolute inset-0 z-[65] bg-black/60 flex items-end animate-in fade-in duration-200"
+                onClick={() => setShowSettingsSheet(false)}
+              >
+                <div
+                  className="w-full max-h-[88%] overflow-y-auto bg-white rounded-t-3xl p-4 shadow-2xl flex flex-col gap-3 animate-in slide-in-from-bottom-8 duration-200"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                        <Settings size={15} className="text-indigo-600" />
+                        App settings
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Saved on this device · applied in the exported app
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowSettingsSheet(false)}
+                      className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+                      aria-label="Close settings"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Theme */}
+                  {config.inAppSettings?.allowThemeChange !== false && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Theme
+                      </p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { id: 'light' as const, label: 'Light', color: '#f8fafc' },
+                          { id: 'dark' as const, label: 'Dark', color: '#0f172a' },
+                          { id: 'midnight' as const, label: 'Midnight', color: '#020617' },
+                          { id: 'emerald' as const, label: 'Emerald', color: '#052e2b' },
+                        ].map((theme) => (
+                          <button
+                            key={theme.id}
+                            onClick={() => setSimTheme(theme.id)}
+                            className={`p-2 rounded-xl border text-[10px] font-semibold transition ${
+                              simTheme === theme.id
+                                ? 'border-indigo-500 ring-2 ring-indigo-200 text-slate-900'
+                                : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            <span
+                              className="block w-full h-7 rounded-lg mb-1 border border-slate-200"
+                              style={{ backgroundColor: theme.color }}
+                            />
+                            {theme.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Font family */}
+                  {config.inAppSettings?.allowFontChange !== false && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Font family
+                      </p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { id: 'system' as const, label: 'System', css: 'system-ui, sans-serif' },
+                          { id: 'serif' as const, label: 'Serif', css: 'Georgia, serif' },
+                          { id: 'rounded' as const, label: 'Rounded', css: '"Trebuchet MS", sans-serif' },
+                          { id: 'mono' as const, label: 'Mono', css: 'ui-monospace, monospace' },
+                        ].map((font) => (
+                          <button
+                            key={font.id}
+                            onClick={() => setSimFont(font.id)}
+                            style={{ fontFamily: font.css }}
+                            className={`py-2 rounded-xl border text-[11px] font-semibold transition ${
+                              simFont === font.id
+                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                                : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {font.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Font size */}
+                  {config.inAppSettings?.allowFontScale !== false && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Text size
+                        </p>
+                        <span className="text-[11px] font-bold text-indigo-600">
+                          {Math.round(simFontScale * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.85}
+                        max={1.35}
+                        step={0.05}
+                        value={simFontScale}
+                        onChange={(e) => setSimFontScale(Number(e.target.value))}
+                        className="w-full accent-indigo-600"
+                      />
+                      <p
+                        className="mt-1 text-slate-700 leading-snug"
+                        style={{ fontSize: `${12 * simFontScale}px` }}
+                      >
+                        Preview: this is how body text will look in your app.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Pages */}
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    {config.pages?.about?.enabled && (
+                      <button
+                        onClick={() => {
+                          setShowSettingsSheet(false);
+                          setActiveModalContent({
+                            title: config.pages?.about?.title || 'About',
+                            html: config.pages?.about?.content || '<p>About this app.</p>',
+                          });
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Info size={14} className="text-sky-500" /> About this app
+                        </span>
+                        <ChevronRight size={14} className="text-slate-400" />
+                      </button>
+                    )}
+                    {config.pages?.rate?.enabled && (
+                      <button
+                        onClick={() => {
+                          setShowSettingsSheet(false);
+                          window.open(rateUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Star size={14} className="text-amber-500" /> Rate this app
+                        </span>
+                        <ChevronRight size={14} className="text-slate-400" />
+                      </button>
+                    )}
+                    {config.pages?.privacy?.enabled && (
+                      <button
+                        onClick={() => {
+                          setShowSettingsSheet(false);
+                          setActiveModalContent({
+                            title: config.pages?.privacy?.title || 'Privacy Policy',
+                            html:
+                              config.pages?.privacy?.content ||
+                              '<p>Your privacy policy goes here.</p>',
+                          });
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700"
+                      >
+                        <span className="flex items-center gap-2">
+                          <FileCode size={14} className="text-emerald-500" /> Privacy Policy
+                        </span>
+                        <ChevronRight size={14} className="text-slate-400" />
+                      </button>
+                    )}
+                    {!config.pages?.about?.enabled &&
+                      !config.pages?.rate?.enabled &&
+                      !config.pages?.privacy?.enabled && (
+                        <p className="text-[11px] text-slate-400 text-center py-1">
+                          No info pages are enabled. Turn them on in App Features → Pages.
+                        </p>
+                      )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notification inbox sheet */}
+            {showNotificationsSheet && (
+              <div
+                className="absolute inset-0 z-[65] bg-black/60 flex items-end animate-in fade-in duration-200"
+                onClick={() => setShowNotificationsSheet(false)}
+              >
+                <div
+                  className="w-full max-h-[80%] overflow-y-auto bg-white rounded-t-3xl p-4 shadow-2xl flex flex-col gap-3 animate-in slide-in-from-bottom-8 duration-200"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                        <Bell size={15} className="text-rose-500" />
+                        {config.notifications?.title || 'Notifications'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Messages sent by the app creator
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowNotificationsSheet(false)}
+                      className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+                      aria-label="Close notifications"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-800">Welcome</span>
+                        <span className="text-[9px] text-slate-400">now</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                        {config.notifications?.message ||
+                          'You are all caught up. New announcements from the creator appear here.'}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-800">App update</span>
+                        <span className="text-[9px] text-slate-400">1h</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                        Content is refreshed automatically from your creator&apos;s server.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      if (typeof Notification === 'undefined') return;
+                      const result = await Notification.requestPermission();
+                      setNotificationPermission(result);
+                    }}
+                    disabled={
+                      notificationPermission === 'granted' ||
+                      notificationPermission === 'unsupported'
+                    }
+                    className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:bg-slate-200 disabled:text-slate-500 text-white text-xs font-bold transition"
+                  >
+                    {notificationPermission === 'granted'
+                      ? 'Notifications allowed'
+                      : notificationPermission === 'denied'
+                        ? 'Blocked in browser settings'
+                        : notificationPermission === 'unsupported'
+                          ? 'System notifications need Android / Chrome'
+                          : 'Allow notifications'}
+                  </button>
+                  {config.notifications?.feedUrl && (
+                    <p className="text-[10px] text-slate-400 break-all">
+                      Feed: {config.notifications.feedUrl}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -895,7 +1446,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
             {/* Splash Screen Layer */}
             {showSplash && config.splashScreen.enabled && (
               <div
-                className="absolute inset-0 z-70 flex flex-col items-center justify-center text-white p-6 transition-all duration-500 animate-in fade-in"
+                className="absolute inset-0 z-70 overflow-hidden text-white transition-all duration-500 animate-in fade-in"
                 style={{
                   background:
                     config.splashScreen.bgType === 'gradient'
@@ -903,32 +1454,96 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ config }) => {
                       : config.splashScreen.bgColor,
                 }}
               >
-                {config.splashScreen.customImageUrl ? (
-                  <div className="w-24 h-24 rounded-2xl overflow-hidden mb-4 shadow-xl border border-white/20 bg-white/10 backdrop-blur-sm p-1">
+                {splashLayout === 'image-fullscreen' && config.splashScreen.customImageUrl && (
+                  <>
                     <img
                       src={config.splashScreen.customImageUrl}
                       alt="Splash"
-                      className="w-full h-full object-contain"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
-                  </div>
-                ) : (
-                  <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl mb-4 animate-bounce">
-                    {renderAppIcon(config.splashScreen.logoIcon, 40, 'text-white')}
-                  </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/20" />
+                  </>
                 )}
-                <h1 className="text-xl font-extrabold tracking-tight text-center">
-                  {config.splashScreen.title}
-                </h1>
-                <p className="text-xs text-white/80 text-center mt-1">
-                  {config.splashScreen.subtitle}
-                </p>
 
-                {config.splashScreen.showSpinner && (
-                  <div className="mt-8 flex items-center gap-2">
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span className="text-[10px] text-white/70">Starting up...</span>
-                  </div>
-                )}
+                <div
+                  className={`relative z-10 h-full w-full flex flex-col p-6 ${
+                    splashLayout === 'image-fullscreen' && config.splashScreen.customImageUrl
+                      ? 'justify-end items-start text-left'
+                      : 'items-center justify-center text-center'
+                  }`}
+                >
+                  {splashLayout !== 'text-only' &&
+                    !(
+                      splashLayout === 'image-fullscreen' &&
+                      config.splashScreen.customImageUrl
+                    ) &&
+                    (config.splashScreen.customImageUrl ? (
+                      <div
+                        className="overflow-hidden mb-4 shadow-xl bg-white/10 backdrop-blur-sm shrink-0"
+                        style={{
+                          width: splashLayout === 'image-center' ? 132 : 112,
+                          height: splashLayout === 'image-center' ? 132 : 112,
+                          borderRadius:
+                            splashLayout === 'image-bordered'
+                              ? config.splashScreen.imageRadius ?? 24
+                              : 18,
+                          border:
+                            splashLayout === 'image-bordered'
+                              ? `${config.splashScreen.imageBorderWidth ?? 4}px solid ${
+                                  config.splashScreen.imageBorderColor || '#ffffff'
+                                }`
+                              : '1px solid rgba(255,255,255,0.25)',
+                          padding: 4,
+                        }}
+                      >
+                        <img
+                          src={config.splashScreen.customImageUrl}
+                          alt="Splash"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl mb-4 animate-bounce">
+                        {renderAppIcon(config.splashScreen.logoIcon, 40, 'text-white')}
+                      </div>
+                    ))}
+
+                  <h1
+                    className={`font-extrabold tracking-tight ${
+                      splashLayout === 'image-fullscreen' && config.splashScreen.customImageUrl
+                        ? 'text-2xl drop-shadow-lg'
+                        : 'text-xl'
+                    }`}
+                  >
+                    {config.splashScreen.title}
+                  </h1>
+                  <p className="text-xs text-white/80 mt-1 max-w-[85%]">
+                    {config.splashScreen.subtitle}
+                  </p>
+
+                  {config.splashScreen.showSpinner && (
+                    <div className="mt-8 flex items-center gap-2">
+                      {config.splashScreen.spinnerType === 'dots' ? (
+                        <div className="flex items-center gap-1">
+                          {[0, 1, 2].map((index) => (
+                            <span
+                              key={index}
+                              className="w-1.5 h-1.5 rounded-full bg-white animate-bounce"
+                              style={{ animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                      ) : config.splashScreen.spinnerType === 'pulse' ? (
+                        <div className="w-10 h-1.5 rounded-full bg-white/30 overflow-hidden">
+                          <div className="h-full w-1/2 bg-white rounded-full animate-pulse" />
+                        </div>
+                      ) : (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      )}
+                      <span className="text-[10px] text-white/70">Starting up...</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
