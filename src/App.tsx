@@ -16,6 +16,7 @@ import { AdMobEditor } from './components/editor/AdMobEditor';
 import { KeystoreEditor } from './components/editor/KeystoreEditor';
 import { PhoneTestModal } from './components/editor/PhoneTestModal';
 import { DeployEditor } from './components/editor/DeployEditor';
+import { MyDownloads } from './components/editor/MyDownloads';
 import {
   Smartphone,
   Sparkles,
@@ -271,6 +272,7 @@ export default function App() {
           className="w-full lg:w-5/12 flex flex-col items-center lg:h-full lg:overflow-y-auto lg:pb-8"
         >
           <DeviceSimulator config={config} />
+          <MyDownloads />
         </div>
       </main>
 

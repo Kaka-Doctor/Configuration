@@ -11,6 +11,8 @@ import {
   type DeployServiceStatus,
 } from '../../utils/deployRelay';
 import { triggerDownload } from '../../utils/exportService';
+import { saveDeployRecord } from '../../utils/deployHistory';
+import { cleanVersion } from '../../utils/androidProject';
 import {
   AlertCircle,
   CheckCircle2,
@@ -133,6 +135,33 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
 
   const busy = phase === 'preparing' || phase === 'uploading' || phase === 'building';
   const configured = Boolean(service?.configured);
+
+  // Remember the finished build so its download link also appears below the
+  // simulator and survives a page reload.
+  useEffect(() => {
+    if (phase !== 'ready' || (!result?.apkUrl && !result?.releaseUrl)) return;
+    if (!deployId) return;
+    saveDeployRecord({
+      deployId,
+      appName: config.appName || 'Android app',
+      packageId: config.appPackageId || '',
+      version: cleanVersion(config),
+      createdAt: Date.now(),
+      releaseUrl: result?.releaseUrl,
+      apkUrl: result?.apkUrl,
+      aabUrl: result?.aabUrl,
+    });
+  }, [
+    phase,
+    deployId,
+    result?.apkUrl,
+    result?.aabUrl,
+    result?.releaseUrl,
+    config.appName,
+    config.appPackageId,
+    config.versionName,
+  ]);
+
   const workflowDownload = () =>
     triggerDownload(
       new Blob([generateRelayWorkflow()], { type: 'text/yaml;charset=utf-8' }),
@@ -190,9 +219,14 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
             <ol className="space-y-3">
               <Step number={1} title="Create a relay repository">
                 <p>
-                  Make a <strong>private</strong> GitHub repository, for example{' '}
-                  <code>your-name/appcraft-build-relay</code>. It is only a build inbox, not your
-                  app repository.
+                  Make a <strong>public</strong> GitHub repository, for example{' '}
+                  <code>your-name/appcraft-build-relay</code>. Public repositories get free GitHub
+                  Actions minutes; private ones stop instantly once the monthly minutes are used
+                  up. It is only a build inbox, not your app repository.
+                </p>
+                <p>
+                  The uploaded project sits on a throwaway branch for the length of the build and is
+                  deleted by the workflow, so nothing is left behind.
                 </p>
               </Step>
               <Step number={2} title="Add the build workflow">
@@ -286,7 +320,7 @@ DEPLOY_ACCESS_CODE=optional-shared-code`}</Code>
               <ShieldCheck size={13} className="mt-0.5 shrink-0 text-emerald-400" />
               The browser uploads the generated project (no keystore, no GitHub token). The relay
               deletes its build branch after every run; the APK/AAB Release is kept so the download
-              does not expire.
+              does not expire. Finished builds stay listed under the phone preview.
             </p>
           </>
         )}

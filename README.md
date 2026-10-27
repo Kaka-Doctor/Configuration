@@ -55,8 +55,38 @@ npm run wrapper    # re-download the embedded Gradle wrapper (advanced)
 - SPA fallback and long-lived caching for hashed assets
 
 Connect the repository in Netlify (or drag the folder into Netlify Drop) and it builds
-without any environment variables. The site is fully static — no server functions and no
-API keys.
+without any environment variables. The site is static except for one optional Netlify
+Function (`netlify/functions/deploy.mjs`) used by the **Deploy** tab; without the relay
+variables below that function simply reports "setup needed" and everything else works.
+
+### One-click APK/AAB deploy relay
+
+The **Deploy** tab sends the whole generated project to a small relay repository you own.
+The relay's GitHub Actions workflow builds the APK and AAB, publishes them as a GitHub
+Release, then deletes the branch. The Release is permanent, so the download link never
+expires, and the finished build stays listed under the phone preview in the studio.
+
+1. Create a **public** GitHub repository, e.g. `<you>/appcraft-build-relay`
+   (public = free Actions minutes; a private repo stops building once its minutes run out).
+2. Add `.github/workflows/deploy-relay.yml` — download the exact file from the Deploy tab.
+3. Create a fine-grained token limited to that repository with `Contents: Read and write`,
+   `Actions: Read and write`, `Metadata: Read`.
+4. In Netlify → Site configuration → Environment variables, add:
+
+   ```text
+   GITHUB_RELAY_REPO=<you>/appcraft-build-relay
+   GITHUB_RELAY_TOKEN=github_pat_...
+   GITHUB_RELAY_BRANCH=main
+   GITHUB_RELAY_WORKFLOW=deploy-relay.yml
+   DEPLOY_ACCESS_CODE=optional-shared-code
+   ```
+
+5. Redeploy the site. The Deploy tab shows **READY**.
+
+The token is used only by the Netlify Function; the browser never sees it. The uploaded
+ZIP lives on a throwaway branch for the length of the build and is deleted afterwards
+(so on a public relay it is briefly public — use a private repo if that matters to you).
+
 
 ---
 
