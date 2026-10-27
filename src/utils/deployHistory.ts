@@ -16,8 +16,58 @@ export interface DeployRecord {
 }
 
 const STORAGE_KEY = 'appcraft_deploy_history_v1';
+const ACTIVE_KEY = 'appcraft_active_deploy_v1';
 const CHANGE_EVENT = 'appcraft:deploy-history';
 const MAX_RECORDS = 12;
+const ACTIVE_MAX_AGE = 2 * 60 * 60 * 1000;
+
+export interface ActiveDeploy {
+  deployId: string;
+  appName: string;
+  packageId: string;
+  version: string;
+  startedAt: number;
+}
+
+/** The build that is still running, so a reload keeps watching it. */
+export function loadActiveDeploy(): ActiveDeploy | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ActiveDeploy>;
+    if (typeof parsed.deployId !== 'string' || !parsed.deployId) return null;
+    const startedAt = Number(parsed.startedAt) || 0;
+    if (!startedAt || Date.now() - startedAt > ACTIVE_MAX_AGE) {
+      localStorage.removeItem(ACTIVE_KEY);
+      return null;
+    }
+    return {
+      deployId: parsed.deployId,
+      appName: String(parsed.appName || 'Android app'),
+      packageId: String(parsed.packageId || ''),
+      version: String(parsed.version || '1.0.0'),
+      startedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveActiveDeploy(active: ActiveDeploy): void {
+  try {
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify(active));
+  } catch {
+    /* private mode */
+  }
+}
+
+export function clearActiveDeploy(): void {
+  try {
+    localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    /* private mode */
+  }
+}
 
 function isRecord(value: unknown): value is DeployRecord {
   if (!value || typeof value !== 'object') return false;

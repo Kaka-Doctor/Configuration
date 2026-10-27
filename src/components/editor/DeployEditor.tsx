@@ -11,7 +11,7 @@ import {
   type DeployServiceStatus,
 } from '../../utils/deployRelay';
 import { triggerDownload } from '../../utils/exportService';
-import { saveDeployRecord } from '../../utils/deployHistory';
+import { saveDeployRecord, loadActiveDeploy, saveActiveDeploy, clearActiveDeploy } from '../../utils/deployHistory';
 import { cleanVersion } from '../../utils/androidProject';
 import {
   AlertCircle,
@@ -78,6 +78,20 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
     void refreshService();
   }, []);
 
+  // If the page was reloaded during a build, keep watching that build instead
+  // of losing the download link.
+  useEffect(() => {
+    const active = loadActiveDeploy();
+    if (!active) return;
+    setDeployId(active.deployId);
+    setPhase('building');
+    setResult({
+      state: 'queued',
+      deployId: active.deployId,
+      message: `Still building ${active.appName}. This page can be reloaded; the link is saved when it finishes.`,
+    });
+  }, []);
+
   useEffect(() => {
     if (!deployId || phase === 'ready' || phase === 'failed') return;
     let cancelled = false;
@@ -88,7 +102,10 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
         pollErrors.current = 0;
         setResult(next);
         setPhase(next.state === 'ready' ? 'ready' : next.state === 'failed' ? 'failed' : 'building');
-        if (next.state === 'failed' && next.message) setError(next.message);
+        if (next.state === 'failed') {
+          clearActiveDeploy();
+          if (next.message) setError(next.message);
+        }
       } catch (pollError) {
         pollErrors.current += 1;
         if (pollErrors.current >= 5) {
@@ -117,6 +134,13 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
     try {
       const started = await startDeploy(config, accessCode, () => setPhase('uploading'));
       setDeployId(started.deployId);
+      saveActiveDeploy({
+        deployId: started.deployId,
+        appName: config.appName || 'Android app',
+        packageId: config.appPackageId || '',
+        version: cleanVersion(config),
+        startedAt: Date.now(),
+      });
       setResult({
         state: 'queued',
         deployId: started.deployId,
@@ -151,6 +175,7 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
       apkUrl: result?.apkUrl,
       aabUrl: result?.aabUrl,
     });
+    clearActiveDeploy();
   }, [
     phase,
     deployId,
