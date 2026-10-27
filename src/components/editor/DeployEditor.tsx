@@ -120,9 +120,18 @@ export const DeployEditor: React.FC<DeployEditorProps> = ({ config }) => {
     };
     void tick();
     const timer = window.setInterval(() => void tick(), 6000);
+    // Browsers freeze timers in hidden tabs, so refresh as soon as the studio
+    // is visible again instead of showing a stale "waiting" message.
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
     };
   }, [deployId, phase]);
 

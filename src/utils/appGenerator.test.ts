@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   generateManifestJson,
   generateServiceWorkerJs,
@@ -508,6 +509,18 @@ test('drawer and bottom navigation can be shown together and updated live', () =
   assert.ok(drawerOnly.includes('id="bottom-nav" hidden'), 'drawer-only hides the bottom bar');
   assert.ok(drawerOnly.includes('.bottom-nav-bar[hidden]'), 'hidden bottom bar is not painted');
   assert.ok(drawerOnly.includes("bottomBar.hidden = !("), 'live sync toggles the bottom bar');
+});
+
+test('the studio service worker never caches the deploy relay function', () => {
+  const source = readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8');
+  assert.ok(
+    source.includes("url.pathname.startsWith('/.netlify/')"),
+    'the relay endpoint must bypass the cache so build progress can advance'
+  );
+  assert.ok(
+    !/caches\.put\(request, copy\)/.test(source.split("url.pathname.startsWith('/.netlify/')")[1] || ''),
+    'function responses are never written to the cache'
+  );
 });
 
 test('the generated inline script and service worker parse as JavaScript', () => {

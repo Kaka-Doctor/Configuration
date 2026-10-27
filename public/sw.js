@@ -5,7 +5,7 @@
  * drops. Navigation requests go to the network first (so a new deploy is
  * picked up immediately) and fall back to the cached shell offline.
  */
-const CACHE_NAME = 'appcraft-studio-v1';
+const CACHE_NAME = 'appcraft-studio-v2';
 const SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -52,6 +52,12 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => caches.match('/'))
     );
+    return;
+  }
+
+  // Server endpoints (the deploy relay) must never be served from the cache:
+  // a stale "queued" answer would freeze the build progress.
+  if (url.pathname.startsWith('/.netlify/') || url.pathname.startsWith('/api/')) {
     return;
   }
 
