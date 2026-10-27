@@ -35,6 +35,22 @@ export function escapeXml(value: string): string {
   });
 }
 
+/**
+ * Escapes a value for an Android string resource (`<string name="...">`).
+ * Android's resource compiler treats backslash as an escape character, so an
+ * apostrophe must be written as `\\'` rather than the XML entity `&apos;`
+ * (which aapt rejects with "Invalid unicode escape sequence").
+ */
+function escapeAndroidString(value: string): string {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"');
+}
+
 /** Escapes a value for use inside a single-quoted Groovy string. */
 function gradleString(value: string): string {
   return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -1006,9 +1022,9 @@ ${bannerPosition === 'bottom' ? adsView : ''}
 export function generateStringsXml(config: AppConfig): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">${escapeXml(config.appName)}</string>
-    <string name="app_short_name">${escapeXml(config.shortName)}</string>
-    <string name="version_name">${escapeXml(config.versionName)}</string>
+    <string name="app_name">${escapeAndroidString(config.appName)}</string>
+    <string name="app_short_name">${escapeAndroidString(config.shortName)}</string>
+    <string name="version_name">${escapeAndroidString(config.versionName)}</string>
 </resources>
 `;
 }
